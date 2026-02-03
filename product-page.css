@@ -1,0 +1,32 @@
+/* Swatch wrapper */
+.color-swatches {
+  display: flex;
+  gap: 10px;
+}
+
+/* Actual color dots */
+.color-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+
+  border-radius: 50%;
+  border: 1px solid #ccc;
+
+  cursor: pointer;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Active state */
+.color-swatch.is-active {
+  border-color: #000;
+}
+
+.color-swatch.is-active::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px solid #000;
+  border-radius: 50%;
+}

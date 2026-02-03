@@ -1,0 +1,223 @@
+/* PAGE WRAPPER */
+.order-page {
+  max-width: 960px;
+  margin: 0 auto;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #111;
+}
+
+/* SECTION CARD */
+.order-page .order-section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+/* SECTION TITLES */
+.order-page .order-section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* FIELD GRID */
+.order-page .field-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* INPUTS (GLOBAL) */
+.order-page input[type="text"],
+.order-page input[type="email"],
+.order-page input[type="tel"],
+.order-page input[type="number"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.order-page input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* ORDER TABLE */
+.order-page #order-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  table-layout: fixed; /* IMPORTANT: stabilizes columns */
+}
+
+.order-page #order-table thead th {
+  background: #f9fafb;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.order-page #order-table tbody td {
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+/* TABLE-SPECIFIC FIXES */
+.order-page #order-table .price-cell {
+  white-space: nowrap;
+  text-align: right;
+  font-weight: 500;
+  min-width: 90px;
+}
+
+.order-page #order-table .qty {
+  width: 70px;           /* override global 100% */
+  text-align: center;
+}
+
+.order-page #order-table .row-total {
+  white-space: nowrap;
+  text-align: right;
+  font-weight: 600;
+  min-width: 110px;
+}
+
+/* PRICE & TOTAL AS BOXED FIELDS */
+.order-page #order-table .price-input,
+.order-page #order-table .total-input {
+  width: 100%;
+  background: #f9fafb;
+  text-align: right;
+  font-weight: 500;
+  cursor: default;
+}
+
+
+/* REMOVE BUTTON */
+.order-page .remove-row {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* ADD PRODUCT BUTTON */
+.order-page #add-row {
+  margin-top: 12px;
+  padding: 8px 14px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* CLEAR BUTTON */
+.order-page #clear-table {
+	margin-top: 12px
+	padding: 8px 14px;
+	background: #f3f4f6;
+	border: 1px solid #d1d5db;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+/* SUMMARY */
+.order-page .summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+  margin-top: 24px;
+}
+
+.order-page .summary strong {
+  font-size: 20px;
+}
+
+/* SUBMIT */
+.order-page button[type="submit"] {
+  margin-top: 24px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+
+/* =========================
+   SKU AUTOCOMPLETE DROPDOWN
+   ========================= */
+
+.order-page .sku-suggestions {
+  position: absolute;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-top: 4px;
+  width: 100%;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.order-page .sku-suggestion {
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.order-page .sku-suggestion:hover {
+  background: #f3f4f6;
+}
+
+/* Invalid SKU state (already discussed) */
+.order-page .sku.invalid {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.order-page td {
+  position: relative;
+}
+
+.order-page .sku-suggestion.active {
+  background: #e5e7eb;
+}
+
+#submit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.75);
+  display: none; /* ← THIS is the key */
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  flex-direction: column;
+  gap: 12px;
+  backdrop-filter: blur(2px);
+}
+
+#submit-overlay.active {
+  display: flex;
+}
+
+
+
