@@ -13,49 +13,66 @@
     img.sizes = "100vw";
   }
 
-  // ---- image mappings (TEMP: hardcoded, later from gallery/JSON) ----
-  const imageMap = {
-    red: {
-      color: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_red.jpg",
-      size: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_m.jpg",
-    },
-    blue: {
-      color: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_blue.jpg",
-      size: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_l.jpg",
-    },
-    grey: {
-      color: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_grey.jpg",
-      size: "https://www.metroshirtinc.com/wp-content/uploads/2025/10/QTS001_m.jpg",
-    },
-  };
+  // ---- image mappings (from inline JSON injected by plugin) ----
+  const data =
+    typeof window !== "undefined" ? window.MSI_PRODUCT_IMAGE_DATA : null;
+  const colorImages = data && data.colors ? data.colors : {};
+  const sizeImages = data && data.sizes ? data.sizes : {};
+  let activeSizeKey = null;
+
+  function getFirstKey(obj) {
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) return key;
+    }
+    return null;
+  }
 
   function applyColor(color) {
-    const images = imageMap[color];
-    if (!images) return;
+    const colorUrl = colorImages[color];
+    if (!colorUrl) return;
 
     const colorImg = findImage(".product-image-color");
     const sizeImg = findImage(".product-image-size");
 
-    if (!colorImg || !sizeImg) return;
+    if (colorImg) swapImage(colorImg, colorUrl);
 
-    swapImage(colorImg, images.color);
-    swapImage(sizeImg, images.size);
+    if (sizeImg) {
+      const sizeKey = activeSizeKey || getFirstKey(sizeImages);
+      if (sizeKey && sizeImages[sizeKey]) {
+        swapImage(sizeImg, sizeImages[sizeKey]);
+      }
+    }
+  }
+
+  function applySize(sizeKey) {
+    const sizeUrl = sizeImages[sizeKey];
+    if (!sizeUrl) return;
+
+    activeSizeKey = sizeKey;
+    const sizeImg = findImage(".product-image-size");
+    if (sizeImg) swapImage(sizeImg, sizeUrl);
   }
 
   // ---- default selection (runs once when DOM is usable) ----
   function initDefaultColor() {
     const firstSwatch = document.querySelector(".color-swatch");
-    if (!firstSwatch) return;
+    if (firstSwatch) {
+      const color = firstSwatch.dataset.color;
+      if (!color) return;
 
-    const color = firstSwatch.dataset.color;
-    if (!color) return;
+      document
+        .querySelectorAll(".color-swatch")
+        .forEach((s) => s.classList.remove("is-active"));
 
-    document
-      .querySelectorAll(".color-swatch")
-      .forEach((s) => s.classList.remove("is-active"));
+      firstSwatch.classList.add("is-active");
+      applyColor(color);
+      return;
+    }
 
-    firstSwatch.classList.add("is-active");
-    applyColor(color);
+    const fallbackColor = getFirstKey(colorImages);
+    if (fallbackColor) {
+      applyColor(fallbackColor);
+    }
   }
 
   // ---- event delegation for swatches ----
@@ -72,6 +89,21 @@
 
     btn.classList.add("is-active");
     applyColor(color);
+  });
+
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest(".size-swatch");
+    if (!btn) return;
+
+    const sizeKey = btn.dataset.size;
+    if (!sizeKey) return;
+
+    document
+      .querySelectorAll(".size-swatch")
+      .forEach((s) => s.classList.remove("is-active"));
+
+    btn.classList.add("is-active");
+    applySize(sizeKey);
   });
 
   // ---- safe init (handles Gutenberg timing) ----
