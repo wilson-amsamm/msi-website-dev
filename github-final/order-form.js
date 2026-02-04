@@ -2,6 +2,8 @@
   console.log('DOM ready');
 
   const GSHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzr6mErbrtZNrOObgwD24JNWxZ9Ew5oErhK2eWZtWdYwp_S9L8KC7rCUbpF4tD0B5bnQA/exec";
+  const RECAPTCHA_SITE_KEY = "6Ld_AWAsAAAAAKW-OCc7goto86eCafzuB3w0-9ob";
+  const RECAPTCHA_ACTION = "order_submit";
 
   const form = document.getElementById('bulk-order-form');
   if (!form) return;
@@ -18,35 +20,41 @@
   }
 
   const submitBtn = document.getElementById('submit-order-btn');
+  let isSubmitting = false;
 
   if (submitBtn) {
     submitBtn.addEventListener('click', async function (e) {
       e.preventDefault();
       e.stopPropagation();
 
+      if (isSubmitting) return;
+
       // 1) Validate first
       if (!validateForm()) return;
 
       // 2-4) Lock UI + show loading
       setSubmittingUI(true);
+      isSubmitting = true;
 
       try {
         // 5) Submit in background
-        const payload = buildOrderPayload();
-        await submitToGoogleSheets(payload);
+        const recaptchaToken = await getRecaptchaToken();
+        const payload = buildOrderPayload(recaptchaToken);
+        const result = await submitToGoogleSheets(payload);
 
-        // 6) Success confirmation
-        alert('Order submitted successfully.');
+        setSubmittingUI(false);
+        isSubmitting = false;
+
+        showOrderSummaryModal(payload, result && result.order_number ? result.order_number : '');
 
         // 6b) Reload after a short delay (smooth UX)
-        setTimeout(() => {
-          window.location.reload();
-        }, 700);
+        // handled by modal "OK"
       } catch (err) {
         // 7) Failure recovery
         console.error(err);
         alert('Submission failed. Please try again.');
         setSubmittingUI(false);
+        isSubmitting = false;
       }
     });
   }
@@ -92,11 +100,13 @@
   }
 
   let productCatalog = {};
+  const productDetailCache = new Map();
 
   fetch('/wp-json/orderform/v1/products')
     .then(res => res.json())
     .then(data => {
       productCatalog = data;
+      window.productCatalog = productCatalog;
       console.log('Woo products loaded:', productCatalog);
     })
     .catch(err => {
@@ -156,7 +166,20 @@
       list.appendChild(item);
     });
 
-    row.querySelector('.sku').parentElement.appendChild(list);
+    const skuInput = row.querySelector('.sku');
+    const parent = skuInput ? skuInput.parentElement : row;
+    parent.appendChild(list);
+
+    // Mobile: anchor dropdown to viewport to avoid clipping inside scroll containers
+    if (window.matchMedia && window.matchMedia('(max-width: 840px)').matches && skuInput) {
+      const rect = skuInput.getBoundingClientRect();
+      list.classList.add('sku-suggestions--floating');
+      list.style.position = 'fixed';
+      list.style.left = '12px';
+      list.style.right = '12px';
+      list.style.top = `${rect.bottom + 6}px`;
+      list.style.width = 'auto';
+    }
   }
 
   function removeSkuSuggestions(row) {
@@ -204,6 +227,8 @@
     const skuInput = row.querySelector('.sku');
     const nameInput = row.querySelector('.product-name');
     const priceInput = row.querySelector('.price-input');
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
 
     if (!productCatalog || Object.keys(productCatalog).length === 0) return;
 
@@ -219,6 +244,8 @@
 
       nameInput.value = '';
       priceInput.value = 'PHP 0';
+      if (colorSelect) resetSelect(colorSelect, 'Color');
+      if (sizeSelect) resetSelect(sizeSelect, 'Size');
       updateRowTotal(row);
 
       // visual cue only
@@ -232,6 +259,11 @@
     row.dataset.invalidSku = "false";
     skuInput.classList.remove('invalid');
     updateRowTotal(row);
+
+    // load color/size options from SKU endpoint
+    if (colorSelect || sizeSelect) {
+      loadProductOptions(row, sku);
+    }
   }
 
   /* =========================
@@ -246,6 +278,16 @@
     row.innerHTML = `
       <td><input type="text" name="items[${rowIndex}][sku]" class="sku" placeholder="SKU"></td>
       <td><input type="text" name="items[${rowIndex}][name]" class="product-name" readonly></td>
+      <td>
+        <select name="items[${rowIndex}][color]" class="color-select">
+          <option value="">Color</option>
+        </select>
+      </td>
+      <td>
+        <select name="items[${rowIndex}][size]" class="size-select">
+          <option value="">Size</option>
+        </select>
+      </td>
       <td><input type="text" name="items[${rowIndex}][price]" class="price-input" value="PHP 0" readonly></td>
       <td><input type="number" name="items[${rowIndex}][qty]" class="qty" min="1" value="1"></td>
       <td><input type="text" class="total-input" value="PHP 0.00" readonly></td>
@@ -308,12 +350,14 @@
     return el ? el.value.trim() : '';
   }
 
-  function buildOrderPayload() {
+  function buildOrderPayload(recaptchaToken) {
     const items = [];
 
     tableBody.querySelectorAll('.order-row').forEach(row => {
       const sku = row.querySelector('.sku').value.trim();
       const name = row.querySelector('.product-name').value.trim();
+      const color = row.querySelector('.color-select')?.value.trim() || '';
+      const size = row.querySelector('.size-select')?.value.trim() || '';
       const price = parseFloat(
         row.querySelector('.price-input').value.replace(/[^\d.]/g, '')
       ) || 0;
@@ -322,6 +366,8 @@
       items.push({
         sku,
         name,
+        color,
+        size,
         price,
         qty,
         amount: price * qty
@@ -334,6 +380,10 @@
 
     return {
       transaction_id: Date.now().toString(),
+      recaptcha: {
+        token: recaptchaToken || "",
+        action: RECAPTCHA_ACTION
+      },
       customer: {
         first_name: getInputValue('first_name'),
         last_name: getInputValue('last_name'),
@@ -357,17 +407,239 @@
     });
 
     const text = await res.text();
-
     let result;
     try {
       result = JSON.parse(text);
     } catch {
-      throw new Error('Invalid response from Google Sheets');
+      throw new Error(`Invalid response from Google Sheets: ${text}`);
     }
 
     if (!result.success) {
-      throw new Error(result.error || 'Apps Script error');
+      throw new Error(result.error || `Apps Script error: ${text}`);
     }
+    return result;
+  }
+
+  let recaptchaPromise = null;
+
+  function loadRecaptcha() {
+    if (!RECAPTCHA_SITE_KEY) return Promise.reject(new Error('Missing reCAPTCHA site key.'));
+    if (window.grecaptcha) return Promise.resolve();
+    if (recaptchaPromise) return recaptchaPromise;
+
+    recaptchaPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(RECAPTCHA_SITE_KEY)}`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load reCAPTCHA.'));
+      document.head.appendChild(script);
+    });
+
+    return recaptchaPromise;
+  }
+
+  function getRecaptchaToken() {
+    if (!RECAPTCHA_SITE_KEY) return Promise.resolve('');
+
+    return loadRecaptcha().then(() => new Promise((resolve, reject) => {
+      if (!window.grecaptcha || !window.grecaptcha.ready) {
+        reject(new Error('reCAPTCHA not ready.'));
+        return;
+      }
+      window.grecaptcha.ready(() => {
+        window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: RECAPTCHA_ACTION })
+          .then(resolve)
+          .catch(err => {
+            console.error('reCAPTCHA execute failed:', err);
+            reject(err);
+          });
+      });
+    }));
+  }
+
+  function resetSelect(select, placeholder) {
+    select.innerHTML = '';
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = placeholder;
+    select.appendChild(opt);
+    select.disabled = true;
+  }
+
+  function formatMoney(value) {
+    const number = Number(value || 0);
+    return `PHP ${number.toFixed(2)}`;
+  }
+
+  function createOrderSummaryModal() {
+    let overlay = document.querySelector('.msi-order-summary-overlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.className = 'msi-order-summary-overlay';
+    overlay.innerHTML = `
+      <div class="msi-order-summary-modal" role="dialog" aria-modal="true" aria-labelledby="msi-order-summary-title">
+        <div class="msi-order-summary-header">
+          <h3 id="msi-order-summary-title">Order Summary</h3>
+          <button type="button" class="msi-order-summary-close" aria-label="Close">×</button>
+        </div>
+        <div class="msi-order-summary-body"></div>
+        <div class="msi-order-summary-actions">
+          <button type="button" class="msi-order-summary-ok">OK</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector('.msi-order-summary-close');
+    const okBtn = overlay.querySelector('.msi-order-summary-ok');
+
+    const close = () => {
+      overlay.classList.remove('is-open');
+      document.body.classList.remove('msi-order-summary-open');
+      window.location.reload();
+    };
+
+    closeBtn.addEventListener('click', close);
+    okBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    return overlay;
+  }
+
+  function showOrderSummaryModal(payload, orderNumber) {
+    const overlay = createOrderSummaryModal();
+    const body = overlay.querySelector('.msi-order-summary-body');
+
+    const itemsRows = (payload.items || []).map((item) => `
+      <tr>
+        <td>${item.sku || ''}</td>
+        <td>${item.name || ''}</td>
+        <td>${item.color || ''}</td>
+        <td>${item.size || ''}</td>
+        <td>${formatMoney(item.price)}</td>
+        <td>${item.qty || 0}</td>
+        <td>${formatMoney(item.amount)}</td>
+      </tr>
+    `).join('');
+
+    body.innerHTML = `
+      <div class="msi-order-summary-meta">
+        <div><strong>Order Number:</strong> ${orderNumber || 'N/A'}</div>
+        <div><strong>Customer:</strong> ${payload.customer.first_name} ${payload.customer.last_name}</div>
+        <div><strong>Email:</strong> ${payload.customer.email}</div>
+        <div><strong>Phone:</strong> ${payload.customer.phone}</div>
+        <div><strong>Company:</strong> ${payload.customer.company}</div>
+        <div><strong>Address:</strong> ${payload.customer.address}</div>
+      </div>
+      <div class="msi-order-summary-table-wrap">
+        <table class="msi-order-summary-table">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Product</th>
+              <th>Color</th>
+              <th>Size</th>
+              <th>Price</th>
+              <th>Qty</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+      </div>
+      <div class="msi-order-summary-total">
+        <span>Total</span>
+        <strong>${formatMoney(payload.total)}</strong>
+      </div>
+    `;
+
+    overlay.classList.add('is-open');
+    document.body.classList.add('msi-order-summary-open');
+  }
+
+  function fillSelect(select, items, placeholder) {
+    select.innerHTML = '';
+    const keys = Object.keys(items || {});
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = placeholder;
+    select.appendChild(placeholderOpt);
+
+    keys.forEach(key => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = String(key).toUpperCase();
+      select.appendChild(opt);
+    });
+
+    if (keys.length > 0) {
+      select.value = keys[0];
+      select.disabled = false;
+    } else {
+      select.disabled = true;
+    }
+
+    if (select.classList.contains('color-select')) {
+      applyColorDot(select);
+    }
+  }
+
+  function applyColorDot(select) {
+    const row = select.closest('.order-row');
+    if (!row) return;
+
+    row.querySelectorAll('.color-dot').forEach(dot => dot.remove());
+
+    const dot = document.createElement('span');
+    dot.className = 'color-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    dot.style.setProperty('--dot-color', select.value || 'transparent');
+
+    select.insertAdjacentElement('beforebegin', dot);
+  }
+
+  async function fetchProductDetails(sku) {
+    if (productDetailCache.has(sku)) {
+      return productDetailCache.get(sku);
+    }
+
+    try {
+      const res = await fetch(`/wp-json/orderform/v1/product/${encodeURIComponent(sku)}`);
+      if (!res.ok) {
+        productDetailCache.set(sku, null);
+        return null;
+      }
+      const data = await res.json();
+      productDetailCache.set(sku, data);
+      return data;
+    } catch (err) {
+      console.error('Failed to load SKU details', err);
+      productDetailCache.set(sku, null);
+      return null;
+    }
+  }
+
+  async function loadProductOptions(row, sku) {
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
+    if (!colorSelect && !sizeSelect) return;
+
+    if (colorSelect) resetSelect(colorSelect, 'Color');
+    if (sizeSelect) resetSelect(sizeSelect, 'Size');
+
+    const data = await fetchProductDetails(sku);
+    if (!data) return;
+
+    if (colorSelect) fillSelect(colorSelect, data.colors || {}, 'Color');
+    if (sizeSelect) fillSelect(sizeSelect, data.sizes || {}, 'Size');
   }
 
   /* =========================
@@ -387,6 +659,12 @@
   document.addEventListener('input', e => {
     if (e.target.classList.contains('qty')) {
       updateRowTotal(e.target.closest('.order-row'));
+    }
+  });
+
+  document.addEventListener('change', e => {
+    if (e.target.classList.contains('color-select')) {
+      applyColorDot(e.target);
     }
   });
 

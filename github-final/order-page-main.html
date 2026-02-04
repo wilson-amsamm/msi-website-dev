@@ -1,0 +1,64 @@
+<div class="order-page">
+
+  <form id="bulk-order-form">
+
+    <!-- CUSTOMER INFO -->
+    <section class="order-section">
+      <h2>Customer Information</h2>
+
+      <div class="field-row">
+        <input type="text" name="first_name" placeholder="First name" required>
+        <input type="text" name="last_name" placeholder="Last name" required>
+      </div>
+
+      <div class="field-row">
+        <input type="tel" name="phone" placeholder="Phone number" required>
+        <input type="email" name="email" placeholder="Email address" required>
+      </div>
+
+      <div class="field-row">
+        <input type="text" name="company" placeholder="Company name">
+        <input type="text" name="address" placeholder="Company Address">
+      </div>
+    </section>
+
+    <!-- ORDER TABLE -->
+    <section class="order-section">
+      <h2>Order Details</h2>
+
+      <table id="order-table">
+        <thead>
+          <tr>
+            <th>Product Code</th>
+            <th>Product Name</th>
+            <th>Color</th>
+            <th>Size</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>Total Amount</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <button type="button" id="add-row">+ Add Product</button>
+      <button type="button" id="clear-table">Clear</button>
+    </section>
+
+    <!-- SUMMARY -->
+    <section class="order-section summary">
+      <h3>Summary</h3>
+      <p>Total: <strong><span id="grand-total">0.00</span></strong></p>
+    </section>
+
+    <button type="submit" id="submit-order-btn">Submit Order</button>
+
+  </form>
+
+</div>
+
+<div id="submit-overlay" aria-hidden="true">
+  <div class="spinner"></div>
+  <div class="overlay-text">Submitting your order…</div>
+</div>

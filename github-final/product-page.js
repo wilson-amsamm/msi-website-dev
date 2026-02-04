@@ -61,6 +61,89 @@
     });
   }
 
+  function parsePriceFromText(text) {
+    if (!text) return null;
+    const numberText = text.replace(/[^0-9.,]/g, "").replace(/,/g, "");
+    const parsed = parseFloat(numberText);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function getUnitPriceInfo() {
+    const data =
+      typeof window !== "undefined" ? window.MSI_PRODUCT_IMAGE_DATA : null;
+    const dataPrice =
+      data && Number.isFinite(Number(data.price)) ? Number(data.price) : 0;
+    const dataCurrency = data && data.currency ? String(data.currency) : "";
+
+    const selectors = [
+      ".summary .price",
+      ".price",
+      ".wc-block-components-product-price__value",
+      ".wc-block-components-product-price__regular",
+      ".woocommerce-Price-amount",
+      ".wp-block-woocommerce-product-price",
+      "[itemprop='price']",
+    ];
+
+    let currency = dataCurrency || "";
+
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+
+      const currencyEl = el.querySelector
+        ? el.querySelector(".woocommerce-Price-currencySymbol")
+        : null;
+      if (!currency && currencyEl) {
+        currency = currencyEl.textContent.trim();
+      }
+
+      const content = el.getAttribute ? el.getAttribute("content") : null;
+      const dataAmount =
+        (el.getAttribute && (el.getAttribute("data-amount") || el.getAttribute("data-price"))) ||
+        (el.dataset && (el.dataset.amount || el.dataset.price));
+
+      const value =
+        parsePriceFromText(content) ||
+        parsePriceFromText(String(dataAmount || "")) ||
+        parsePriceFromText(el.textContent || "");
+
+      if (value && value > 0) {
+        return { value, currency };
+      }
+    }
+
+    if (dataPrice > 0) {
+      return { value: dataPrice, currency: dataCurrency || currency };
+    }
+
+    return { value: 0, currency };
+  }
+
+  function formatMoney(value, currency) {
+    const formatted = Number(value || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return currency ? `${currency}${formatted}` : formatted;
+  }
+
+  function initQtyTotal() {
+    const qtyInput = document.querySelector(".msi-qty-input");
+    const totalEl = document.querySelector(".msi-total-amount");
+    if (!qtyInput || !totalEl) return;
+
+    const update = () => {
+      const qty = Math.max(0, parseInt(qtyInput.value, 10) || 0);
+      const { value, currency } = getUnitPriceInfo();
+      totalEl.textContent = formatMoney(value * qty, currency);
+    };
+
+    qtyInput.addEventListener("input", update);
+    qtyInput.addEventListener("change", update);
+    update();
+  }
+
   let imagesReady = false;
 
   function markImagesReady() {
@@ -159,23 +242,26 @@
     buildSwatches(".color-swatches", colorImages, "color");
     buildSwatches(".size-swatches", sizeImages, "size");
 
+    let selectedColor = false;
     const firstSwatch = document.querySelector(".color-swatch");
     if (firstSwatch) {
       const color = firstSwatch.dataset.color;
-      if (!color) return;
+      if (color) {
+        document
+          .querySelectorAll(".color-swatch")
+          .forEach((s) => s.classList.remove("is-active"));
 
-      document
-        .querySelectorAll(".color-swatch")
-        .forEach((s) => s.classList.remove("is-active"));
-
-      firstSwatch.classList.add("is-active");
-      applyColor(color);
-      return;
+        firstSwatch.classList.add("is-active");
+        applyColor(color);
+        selectedColor = true;
+      }
     }
 
-    const fallbackColor = getFirstKey(colorImages);
-    if (fallbackColor) {
-      applyColor(fallbackColor);
+    if (!selectedColor) {
+      const fallbackColor = getFirstKey(colorImages);
+      if (fallbackColor) {
+        applyColor(fallbackColor);
+      }
     }
 
     const firstSize = document.querySelector(".size-swatch");
@@ -183,6 +269,8 @@
       firstSize.classList.add("is-active");
       applySize(firstSize.dataset.size);
     }
+
+    initQtyTotal();
   }
 
   // ---- event delegation for swatches ----
