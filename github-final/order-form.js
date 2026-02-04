@@ -13,11 +13,18 @@
   const table = document.getElementById('order-table');
   if (!table) return;
 
-  let tableBody = table.querySelector('tbody');
-  if (!tableBody) {
-    tableBody = document.createElement('tbody');
-    table.appendChild(tableBody);
+  function getTableBody() {
+    const currentTable = document.getElementById('order-table');
+    if (!currentTable) return null;
+    let body = currentTable.querySelector('tbody');
+    if (!body) {
+      body = document.createElement('tbody');
+      currentTable.appendChild(body);
+    }
+    return body;
   }
+
+  let tableBody = getTableBody();
 
   const submitBtn = document.getElementById('submit-order-btn');
   let isSubmitting = false;
@@ -81,7 +88,6 @@
   }
 
   const addRowBtn = document.getElementById('add-row');
-  if (!addRowBtn) return;
 
   let rowIndex = 0;
 
@@ -208,6 +214,7 @@
      GRAND TOTAL
      ========================= */
   function updateGrandTotal() {
+    tableBody = getTableBody() || tableBody;
     let total = 0;
 
     tableBody.querySelectorAll('.total-input').forEach(input => {
@@ -271,6 +278,9 @@
      ========================= */
   function createRow() {
     rowIndex++;
+
+    tableBody = getTableBody() || tableBody;
+    if (!tableBody) return;
 
     const row = document.createElement('tr');
     row.classList.add('order-row');
@@ -458,6 +468,11 @@
       });
     }));
   }
+
+  // Preload reCAPTCHA v3 so the badge appears and grecaptcha is available.
+  loadRecaptcha().catch(err => {
+    console.error('reCAPTCHA preload failed:', err);
+  });
 
   function resetSelect(select, placeholder) {
     select.innerHTML = '';
@@ -647,7 +662,19 @@
      ========================= */
   createRow();
 
-  addRowBtn.addEventListener('click', createRow);
+  if (addRowBtn) {
+    addRowBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      createRow();
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#add-row');
+    if (!btn) return;
+    e.preventDefault();
+    createRow();
+  });
 
   tableBody.addEventListener('click', e => {
     if (e.target.classList.contains('remove-row')) {
