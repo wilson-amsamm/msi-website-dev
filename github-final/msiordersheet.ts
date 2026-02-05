@@ -48,6 +48,8 @@ function doPost(e) {
       rows[0].length
     ).setValues(rows);
 
+    sendOrderEmail(payload, orderNumber);
+
     return ContentService
       .createTextOutput(JSON.stringify({ success: true, order_number: orderNumber }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -118,4 +120,104 @@ function verifyRecaptcha(token, action) {
   if (typeof result.score === 'number' && result.score < minScore) {
     throw new Error('reCAPTCHA score too low');
   }
+}
+
+function sendOrderEmail(payload, orderNumber) {
+  const to = payload && payload.customer && payload.customer.email
+    ? String(payload.customer.email).trim()
+    : '';
+
+  if (!to) {
+    throw new Error('Missing customer email for order notification');
+  }
+
+  const senderName = 'metroshirtinc';
+  const subject = orderNumber
+    ? `Metro Shirt Order Confirmation - ${orderNumber}`
+    : 'Metro Shirt Order Confirmation';
+
+  const items = Array.isArray(payload.items) ? payload.items : [];
+
+  const textLines = [
+    `Order Number: ${orderNumber || 'N/A'}`,
+    `Customer: ${(payload.customer.first_name || '')} ${(payload.customer.last_name || '')}`.trim(),
+    `Email: ${payload.customer.email || ''}`,
+    `Phone: ${payload.customer.phone || ''}`,
+    `Company: ${payload.customer.company || ''}`,
+    `Address: ${payload.customer.address || ''}`,
+    '',
+    'Items:'
+  ];
+
+  items.forEach((item) => {
+    textLines.push(
+      `${item.sku || ''} | ${item.name || ''} | ${item.color || ''} | ${item.size || ''} | PHP ${Number(item.price || 0).toFixed(2)} x ${item.qty || 0} = PHP ${Number(item.amount || 0).toFixed(2)}`
+    );
+  });
+
+  textLines.push('');
+  textLines.push(`Total: PHP ${Number(payload.total || 0).toFixed(2)}`);
+
+  const textBody = textLines.join('\n');
+
+  const itemRows = items.map((item) => {
+    const imageCell = item.image_url
+      ? `<img src="${item.image_url}" alt="${item.name || ''}" width="64" height="64" style="object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />`
+      : '';
+
+    return `
+      <tr>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${imageCell}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.sku || ''}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.name || ''}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.color || ''}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.size || ''}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">PHP ${Number(item.price || 0).toFixed(2)}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.qty || 0}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">PHP ${Number(item.amount || 0).toFixed(2)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const htmlBody = `
+    <div style="font-family:Arial, sans-serif;color:#111;">
+      <h2 style="margin:0 0 12px;">Order Summary</h2>
+      <div style="font-size:14px;line-height:1.5;margin-bottom:16px;">
+        <div><strong>Order Number:</strong> ${orderNumber || 'N/A'}</div>
+        <div><strong>Customer:</strong> ${(payload.customer.first_name || '')} ${(payload.customer.last_name || '')}</div>
+        <div><strong>Email:</strong> ${payload.customer.email || ''}</div>
+        <div><strong>Phone:</strong> ${payload.customer.phone || ''}</div>
+        <div><strong>Company:</strong> ${payload.customer.company || ''}</div>
+        <div><strong>Address:</strong> ${payload.customer.address || ''}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f9fafb;">
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Image</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">SKU</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Product</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Color</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Size</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Price</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Qty</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemRows}
+        </tbody>
+      </table>
+      <div style="margin-top:14px;font-size:14px;">
+        <strong>Total:</strong> PHP ${Number(payload.total || 0).toFixed(2)}
+      </div>
+    </div>
+  `;
+
+  MailApp.sendEmail({
+    to,
+    subject,
+    htmlBody,
+    body: textBody,
+    name: senderName
+  });
 }

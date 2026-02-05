@@ -215,6 +215,7 @@
      ========================= */
   function updateGrandTotal() {
     tableBody = getTableBody() || tableBody;
+    if (!tableBody) return;
     let total = 0;
 
     tableBody.querySelectorAll('.total-input').forEach(input => {
@@ -312,6 +313,9 @@
      VALIDATION
      ========================= */
   function validateForm() {
+    tableBody = getTableBody() || tableBody;
+    if (!tableBody) return false;
+
     const rows = tableBody.querySelectorAll('.order-row');
 
     if (rows.length === 0) {
@@ -343,6 +347,20 @@
       }
     }
 
+    const emailEl = document.querySelector('[name="email"]');
+    const email = emailEl ? emailEl.value.trim() : '';
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!email) {
+      alert('Email address is required.');
+      if (emailEl) emailEl.focus();
+      return false;
+    }
+    if (!emailOk) {
+      alert('Please enter a valid email address.');
+      if (emailEl) emailEl.focus();
+      return false;
+    }
+
     const grandTotal = parseFloat(
       document.getElementById('grand-total')?.textContent.replace(/[^\d.]/g, '')
     ) || 0;
@@ -362,6 +380,27 @@
 
   function buildOrderPayload(recaptchaToken) {
     const items = [];
+
+    tableBody = getTableBody() || tableBody;
+    if (!tableBody) {
+      return {
+        transaction_id: Date.now().toString(),
+        recaptcha: {
+          token: recaptchaToken || "",
+          action: RECAPTCHA_ACTION
+        },
+        customer: {
+          first_name: getInputValue('first_name'),
+          last_name: getInputValue('last_name'),
+          phone: getInputValue('phone'),
+          email: getInputValue('email'),
+          company: getInputValue('company'),
+          address: getInputValue('address')
+        },
+        items: [],
+        total: 0
+      };
+    }
 
     tableBody.querySelectorAll('.order-row').forEach(row => {
       const sku = row.querySelector('.sku').value.trim();
@@ -668,13 +707,6 @@
       createRow();
     });
   }
-
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('#add-row');
-    if (!btn) return;
-    e.preventDefault();
-    createRow();
-  });
 
   tableBody.addEventListener('click', e => {
     if (e.target.classList.contains('remove-row')) {
