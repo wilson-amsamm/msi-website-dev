@@ -160,6 +160,21 @@ function sendOrderEmail(payload, orderNumber) {
 
   const textBody = textLines.join('\n');
 
+  const attachments = [];
+
+  items.forEach((item, index) => {
+    if (!item.image_url) return;
+    try {
+      const response = UrlFetchApp.fetch(item.image_url);
+      const blob = response.getBlob();
+      const safeName = (item.sku || `item-${index + 1}`).toString().replace(/[^\w.-]+/g, '_');
+      blob.setName(`${safeName}.jpg`);
+      attachments.push(blob);
+    } catch (err) {
+      // ignore image fetch failures so email still sends
+    }
+  });
+
   const itemRows = items.map((item) => {
     const imageCell = item.image_url
       ? `<img src="${item.image_url}" alt="${item.name || ''}" width="64" height="64" style="object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />`
@@ -218,6 +233,7 @@ function sendOrderEmail(payload, orderNumber) {
     subject,
     htmlBody,
     body: textBody,
-    name: senderName
+    name: senderName,
+    attachments: attachments.length ? attachments : undefined
   });
 }
