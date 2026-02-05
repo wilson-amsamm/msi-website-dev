@@ -503,12 +503,233 @@
   }
 
   .order-page #order-table {
-    min-width: 760px;
-    display: table;
+    display: none;
   }
 
   .order-page #add-row,
   .order-page #clear-table {
     margin-top: 10px;
+  }
+}
+
+/* =========================
+   MOBILE PRODUCT MODAL + LIST
+   ========================= */
+.order-page .order-table-mobile-list {
+  display: none;
+  margin-top: 16px;
+  gap: 12px;
+}
+
+.order-page .order-table-mobile-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  display: grid;
+  gap: 8px;
+}
+
+.order-page .order-table-mobile-card h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.order-page .order-table-mobile-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.order-page .order-table-mobile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.order-page .order-table-mobile-actions button {
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.order-page .order-table-mobile-actions .remove-row {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fff;
+}
+
+.msi-mobile-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10060;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.msi-mobile-modal-overlay.is-open {
+  display: flex;
+}
+
+.msi-mobile-modal {
+  width: min(520px, 96vw);
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.msi-mobile-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.msi-mobile-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.msi-mobile-modal-close {
+  border: none;
+  background: #f3f4f6;
+  color: #111;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.msi-mobile-modal-body {
+  padding: 16px 18px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.msi-mobile-modal-body label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.msi-modal-sku-wrap {
+  position: relative;
+}
+
+.msi-mobile-modal .sku-suggestions {
+  position: absolute;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-top: 6px;
+  width: 100%;
+  z-index: 10070;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  left: 0;
+  top: 100%;
+  overflow: hidden;
+}
+
+.msi-mobile-modal .sku-suggestion {
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.msi-mobile-modal .sku-suggestion:hover {
+  background: #f3f4f6;
+}
+
+.msi-mobile-modal-body .full {
+  grid-column: 1 / -1;
+}
+
+.msi-mobile-modal-body input,
+.msi-mobile-modal-body select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.msi-mobile-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.msi-mobile-modal-actions button {
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.msi-mobile-modal-actions .primary {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+@media (max-width: 840px) {
+  .order-page .order-table-mobile-list {
+    display: grid;
+  }
+
+  .order-page .summary {
+    margin-top: 16px;
+    font-size: 14px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .order-page .summary strong {
+    font-size: 18px;
+    line-height: 1.1;
+  }
+
+  .msi-mobile-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .msi-mobile-modal {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: 85vh;
+  }
+
+  .msi-mobile-modal-body {
+    grid-template-columns: 1fr;
   }
 }

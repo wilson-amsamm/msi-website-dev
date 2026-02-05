@@ -46,7 +46,7 @@
       try {
         // 5) Submit in background
         const recaptchaToken = await getRecaptchaToken();
-        const payload = buildOrderPayload(recaptchaToken);
+        const payload = await buildOrderPayload(recaptchaToken);
         const result = await submitToGoogleSheets(payload);
 
         setSubmittingUI(false);
@@ -102,6 +102,7 @@
       updateGrandTotal();
 
       createRow();
+      renderMobileList();
     });
   }
 
@@ -206,8 +207,11 @@
     const price = parseFloat(priceInput.value.replace(/[^\d.]/g, '')) || 0;
     const qty = parseInt(qtyInput.value, 10) || 0;
 
-    totalInput.value = `PHP ${(price * qty).toFixed(2)}`;
+    totalInput.value = formatMoney(price * qty);
     updateGrandTotal();
+    if (isMobileView()) {
+      renderMobileList();
+    }
   }
 
   /* =========================
@@ -224,7 +228,7 @@
 
     const grandTotalEl = document.getElementById('grand-total');
     if (grandTotalEl) {
-      grandTotalEl.textContent = `PHP ${total.toFixed(2)}`;
+      grandTotalEl.textContent = formatMoney(total);
     }
   }
 
@@ -249,9 +253,10 @@
 
     if (!product) {
       row.dataset.invalidSku = "true";
+      row.dataset.imageUrl = '';
 
       nameInput.value = '';
-      priceInput.value = 'PHP 0';
+      priceInput.value = formatMoney(0);
       if (colorSelect) resetSelect(colorSelect, 'Color');
       if (sizeSelect) resetSelect(sizeSelect, 'Size');
       updateRowTotal(row);
@@ -263,9 +268,11 @@
     }
 
     nameInput.value = product.name;
-    priceInput.value = `PHP ${product.price}`;
+    priceInput.value = formatMoney(product.price);
     row.dataset.invalidSku = "false";
     skuInput.classList.remove('invalid');
+    const selectedColor = colorSelect ? colorSelect.value.trim() : '';
+    row.dataset.imageUrl = getRowImageUrl(row, sku, selectedColor);
     updateRowTotal(row);
 
     // load color/size options from SKU endpoint
@@ -299,9 +306,9 @@
           <option value="">Size</option>
         </select>
       </td>
-      <td><input type="text" name="items[${rowIndex}][price]" class="price-input" value="PHP 0" readonly></td>
+      <td><input type="text" name="items[${rowIndex}][price]" class="price-input" value="${formatMoney(0)}" readonly></td>
       <td><input type="number" name="items[${rowIndex}][qty]" class="qty" min="1" value="1"></td>
-      <td><input type="text" class="total-input" value="PHP 0.00" readonly></td>
+      <td><input type="text" class="total-input" value="${formatMoney(0)}" readonly></td>
       <td><button type="button" class="remove-row">x</button></td>
     `;
 
@@ -378,7 +385,7 @@
     return el ? el.value.trim() : '';
   }
 
-  function buildOrderPayload(recaptchaToken) {
+  async function buildOrderPayload(recaptchaToken) {
     const items = [];
 
     tableBody = getTableBody() || tableBody;
@@ -402,11 +409,13 @@
       };
     }
 
-    tableBody.querySelectorAll('.order-row').forEach(row => {
+    const rows = Array.from(tableBody.querySelectorAll('.order-row'));
+    for (const row of rows) {
       const sku = row.querySelector('.sku').value.trim();
       const name = row.querySelector('.product-name').value.trim();
       const color = row.querySelector('.color-select')?.value.trim() || '';
       const size = row.querySelector('.size-select')?.value.trim() || '';
+      const imageUrl = await ensureImageUrl(row, sku);
       const price = parseFloat(
         row.querySelector('.price-input').value.replace(/[^\d.]/g, '')
       ) || 0;
@@ -417,11 +426,12 @@
         name,
         color,
         size,
+        image_url: imageUrl,
         price,
         qty,
         amount: price * qty
       });
-    });
+    }
 
     const total = parseFloat(
       document.getElementById('grand-total').textContent.replace(/[^\d.]/g, '')
@@ -524,7 +534,11 @@
 
   function formatMoney(value) {
     const number = Number(value || 0);
-    return `PHP ${number.toFixed(2)}`;
+    const formatted = number.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return `PHP ${formatted}`;
   }
 
   function createOrderSummaryModal() {
@@ -681,6 +695,87 @@
     }
   }
 
+  function extractImageUrl(data) {
+    if (!data) return '';
+    if (data.colors && typeof data.colors === 'object') {
+      const colorValues = Object.values(data.colors).filter(Boolean);
+      if (colorValues.length) return colorValues[0];
+    }
+    if (typeof data.image_url === 'string' && data.image_url) return data.image_url;
+    if (typeof data.image === 'string' && data.image) return data.image;
+    if (data.image && typeof data.image.src === 'string') return data.image.src;
+    if (data.sizes && typeof data.sizes === 'object') {
+      const sizeValues = Object.values(data.sizes).filter(Boolean);
+      if (sizeValues.length) return sizeValues[0];
+    }
+    if (Array.isArray(data.images) && data.images.length) {
+      const first = data.images[0];
+      if (typeof first === 'string') return first;
+      if (first && typeof first.src === 'string') return first.src;
+    }
+    return '';
+  }
+
+  function getColorImageUrl(data, selectedColor) {
+    if (!data || !selectedColor) return '';
+    const colors = data.colors;
+    if (!colors || typeof colors !== 'object') return '';
+    const key = selectedColor.toLowerCase();
+    if (colors[key]) return colors[key];
+    const match = Object.keys(colors).find((colorKey) => colorKey.toLowerCase() === key);
+    return match ? colors[match] : '';
+  }
+
+  function getRowImageUrl(row, sku, selectedColor) {
+    const rowUrl = row && row.dataset ? row.dataset.imageUrl : '';
+    if (rowUrl) return rowUrl;
+    if (sku && productCatalog && productCatalog[sku]) {
+      const product = productCatalog[sku];
+      const colorUrl = getColorImageUrl(product, selectedColor);
+      if (colorUrl) return colorUrl;
+      const extracted = extractImageUrl(product);
+      if (extracted) return extracted;
+      if (typeof product.imageUrl === 'string' && product.imageUrl) return product.imageUrl;
+    }
+    return '';
+  }
+
+  async function ensureImageUrl(row, sku) {
+    const selectedColor = row && row.querySelector
+      ? (row.querySelector('.color-select')?.value.trim() || '')
+      : '';
+    const existing = getRowImageUrl(row, sku, selectedColor);
+    if (existing) return existing;
+
+    if (sku) {
+      const cached = productDetailCache.get(sku);
+      const cachedColorUrl = getColorImageUrl(cached, selectedColor);
+      if (cachedColorUrl) {
+        row.dataset.imageUrl = cachedColorUrl;
+        return cachedColorUrl;
+      }
+      const cachedUrl = extractImageUrl(cached);
+      if (cachedUrl) {
+        row.dataset.imageUrl = cachedUrl;
+        return cachedUrl;
+      }
+
+      const data = await fetchProductDetails(sku);
+      const fetchedColorUrl = getColorImageUrl(data, selectedColor);
+      if (fetchedColorUrl) {
+        row.dataset.imageUrl = fetchedColorUrl;
+        return fetchedColorUrl;
+      }
+      const fetchedUrl = extractImageUrl(data);
+      if (fetchedUrl) {
+        row.dataset.imageUrl = fetchedUrl;
+        return fetchedUrl;
+      }
+    }
+
+    return '';
+  }
+
   async function loadProductOptions(row, sku) {
     const colorSelect = row.querySelector('.color-select');
     const sizeSelect = row.querySelector('.size-select');
@@ -692,19 +787,377 @@
     const data = await fetchProductDetails(sku);
     if (!data) return;
 
+    const selectedColor = colorSelect ? colorSelect.value.trim() : '';
+    const colorUrl = getColorImageUrl(data, selectedColor);
+    const imageUrl = colorUrl || extractImageUrl(data);
+    if (imageUrl) row.dataset.imageUrl = imageUrl;
+
     if (colorSelect) fillSelect(colorSelect, data.colors || {}, 'Color');
     if (sizeSelect) fillSelect(sizeSelect, data.sizes || {}, 'Size');
+  }
+
+  function isMobileView() {
+    return window.matchMedia && window.matchMedia('(max-width: 840px)').matches;
+  }
+
+  function ensureMobileList() {
+    if (!isMobileView()) return null;
+    let list = document.getElementById('order-table-mobile-list');
+    if (!list) {
+      list = document.createElement('div');
+      list.id = 'order-table-mobile-list';
+      list.className = 'order-table-mobile-list';
+      const tableEl = document.getElementById('order-table');
+      if (tableEl && tableEl.parentElement) {
+        tableEl.parentElement.insertBefore(list, tableEl.nextSibling);
+      }
+    }
+    return list;
+  }
+
+  function renderMobileList() {
+    if (!isMobileView()) return;
+    const list = ensureMobileList();
+    if (!list) return;
+    list.innerHTML = '';
+    const rows = tableBody.querySelectorAll('.order-row');
+    rows.forEach((row, index) => {
+      const sku = row.querySelector('.sku')?.value.trim() || '';
+      const name = row.querySelector('.product-name')?.value.trim() || '';
+      const color = row.querySelector('.color-select')?.value.trim() || '';
+      const size = row.querySelector('.size-select')?.value.trim() || '';
+      const qty = row.querySelector('.qty')?.value || '';
+      const price = row.querySelector('.price-input')?.value || '';
+      const total = row.querySelector('.total-input')?.value || '';
+
+      const card = document.createElement('div');
+      card.className = 'order-table-mobile-card';
+      card.dataset.rowIndex = String(index);
+      card.innerHTML = `
+        <h4>${sku || 'New Item'}${name ? ` • ${name}` : ''}</h4>
+        <div class="order-table-mobile-meta">
+          <div>Color: ${color || '-'}</div>
+          <div>Size: ${size || '-'}</div>
+          <div>Qty: ${qty || '-'}</div>
+          <div>Price: ${price || '-'}</div>
+          <div>Total: ${total || '-'}</div>
+        </div>
+        <div class="order-table-mobile-actions">
+          <button type="button" class="edit-row">Edit</button>
+          <button type="button" class="remove-row">Remove</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  function createMobileModal() {
+    let overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.className = 'msi-mobile-modal-overlay';
+    overlay.innerHTML = `
+      <div class="msi-mobile-modal" role="dialog" aria-modal="true" aria-labelledby="msi-mobile-modal-title">
+        <div class="msi-mobile-modal-header">
+          <h3 id="msi-mobile-modal-title">Product</h3>
+          <button type="button" class="msi-mobile-modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="msi-mobile-modal-body">
+          <div class="msi-modal-sku-wrap">
+            <label for="msi-modal-sku">Product Code</label>
+            <input id="msi-modal-sku" class="sku" type="text" autocomplete="off" />
+          </div>
+          <div class="full">
+            <label for="msi-modal-name">Product Name</label>
+            <input id="msi-modal-name" type="text" readonly />
+          </div>
+          <div>
+            <label for="msi-modal-color">Color</label>
+            <select id="msi-modal-color"></select>
+          </div>
+          <div>
+            <label for="msi-modal-size">Size</label>
+            <select id="msi-modal-size"></select>
+          </div>
+          <div>
+            <label for="msi-modal-qty">Quantity</label>
+            <input id="msi-modal-qty" type="number" min="1" />
+          </div>
+          <div>
+            <label for="msi-modal-price">Price</label>
+            <input id="msi-modal-price" type="text" readonly />
+          </div>
+          <div>
+            <label for="msi-modal-total">Total</label>
+            <input id="msi-modal-total" type="text" readonly />
+          </div>
+        </div>
+        <div class="msi-mobile-modal-actions">
+          <button type="button" class="msi-mobile-modal-cancel">Cancel</button>
+          <button type="button" class="msi-mobile-modal-save primary">Save</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector('.msi-mobile-modal-close');
+    const cancelBtn = overlay.querySelector('.msi-mobile-modal-cancel');
+    [closeBtn, cancelBtn].forEach((btn) => {
+      if (!btn) return;
+      btn.addEventListener('click', () => closeMobileModal());
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeMobileModal();
+    });
+
+    return overlay;
+  }
+
+  let activeMobileRow = null;
+
+  function openMobileModal(row) {
+    if (!isMobileView()) return;
+    const overlay = createMobileModal();
+    activeMobileRow = row;
+    syncModalFromRow(row);
+    overlay.classList.add('is-open');
+  }
+
+  function closeMobileModal() {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (overlay) overlay.classList.remove('is-open');
+    activeMobileRow = null;
+  }
+
+  function syncModalFromRow(row) {
+    const overlay = createMobileModal();
+    const skuInput = overlay.querySelector('#msi-modal-sku');
+    const nameInput = overlay.querySelector('#msi-modal-name');
+    const colorSelect = overlay.querySelector('#msi-modal-color');
+    const sizeSelect = overlay.querySelector('#msi-modal-size');
+    const qtyInput = overlay.querySelector('#msi-modal-qty');
+    const priceInput = overlay.querySelector('#msi-modal-price');
+    const totalInput = overlay.querySelector('#msi-modal-total');
+
+    skuInput.value = row.querySelector('.sku')?.value.trim() || '';
+    nameInput.value = row.querySelector('.product-name')?.value.trim() || '';
+    qtyInput.value = row.querySelector('.qty')?.value || '1';
+    priceInput.value = row.querySelector('.price-input')?.value || 'PHP 0';
+    totalInput.value = row.querySelector('.total-input')?.value || 'PHP 0.00';
+
+    const sku = skuInput.value.trim().toUpperCase();
+    if (!sku) {
+      colorSelect.innerHTML = '<option value="">Color</option>';
+      sizeSelect.innerHTML = '<option value="">Size</option>';
+      return;
+    }
+
+    fetchProductDetails(sku).then((data) => {
+      if (!data) return;
+      fillModalSelect(colorSelect, data.colors || {}, 'Color');
+      fillModalSelect(sizeSelect, data.sizes || {}, 'Size');
+
+      const rowColor = row.querySelector('.color-select')?.value || '';
+      const rowSize = row.querySelector('.size-select')?.value || '';
+      if (rowColor) colorSelect.value = rowColor;
+      if (rowSize) sizeSelect.value = rowSize;
+    }).catch(() => {});
+  }
+
+  function fillModalSelect(select, items, placeholder) {
+    select.innerHTML = '';
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = placeholder;
+    select.appendChild(placeholderOpt);
+
+    Object.keys(items || {}).forEach((key) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = String(key).toUpperCase();
+      select.appendChild(opt);
+    });
+  }
+
+  function syncRowFromModal(row) {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (!overlay) return;
+    const skuInput = overlay.querySelector('#msi-modal-sku');
+    const nameInput = overlay.querySelector('#msi-modal-name');
+    const colorSelect = overlay.querySelector('#msi-modal-color');
+    const sizeSelect = overlay.querySelector('#msi-modal-size');
+    const qtyInput = overlay.querySelector('#msi-modal-qty');
+    const priceInput = overlay.querySelector('#msi-modal-price');
+
+    const sku = skuInput.value.trim().toUpperCase();
+    row.querySelector('.sku').value = sku;
+    row.querySelector('.product-name').value = nameInput.value.trim();
+    row.querySelector('.color-select').value = colorSelect.value;
+    row.querySelector('.size-select').value = sizeSelect.value;
+    row.querySelector('.qty').value = qtyInput.value || 1;
+    row.querySelector('.price-input').value = priceInput.value || formatMoney(0);
+
+    applyColorDot(row.querySelector('.color-select'));
+    updateRowTotal(row);
+    renderMobileList();
+  }
+
+  function refreshModalTotals() {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (!overlay) return;
+    const qtyInput = overlay.querySelector('#msi-modal-qty');
+    const priceInput = overlay.querySelector('#msi-modal-price');
+    const totalInput = overlay.querySelector('#msi-modal-total');
+
+    const qty = parseInt(qtyInput.value, 10) || 0;
+    const price = parseFloat((priceInput.value || '').replace(/[^\d.]/g, '')) || 0;
+    totalInput.value = formatMoney(price * qty);
+  }
+
+  function removeModalSkuSuggestions() {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (!overlay) return;
+    const existing = overlay.querySelector('.sku-suggestions');
+    if (existing) existing.remove();
+  }
+
+  function showModalSkuSuggestions(query) {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (!overlay) return;
+    const wrap = overlay.querySelector('.msi-modal-sku-wrap');
+    const skuInput = overlay.querySelector('#msi-modal-sku');
+    if (!wrap || !skuInput) return;
+
+    removeModalSkuSuggestions();
+    if (!query) return;
+
+    const matches = Object.keys(productCatalog)
+      .filter((sku) => fuzzyMatch(query, sku))
+      .slice(0, 5);
+
+    if (!matches.length) return;
+
+    const list = document.createElement('div');
+    list.className = 'sku-suggestions';
+
+    matches.forEach((sku) => {
+      const item = document.createElement('div');
+      item.className = 'sku-suggestion';
+      item.textContent = `${sku} - ${productCatalog[sku].name}`;
+      item.addEventListener('mousedown', () => {
+        skuInput.value = sku;
+        applySkuToActiveRow();
+        removeModalSkuSuggestions();
+      });
+      list.appendChild(item);
+    });
+
+    wrap.appendChild(list);
+  }
+
+  function applySkuToActiveRow() {
+    const overlay = document.querySelector('.msi-mobile-modal-overlay');
+    if (!overlay || !activeMobileRow) return;
+    const skuInput = overlay.querySelector('#msi-modal-sku');
+    if (!skuInput) return;
+
+    activeMobileRow.querySelector('.sku').value = skuInput.value.trim();
+    handleSkuLookup(activeMobileRow);
+
+    setTimeout(() => {
+      syncModalFromRow(activeMobileRow);
+      refreshModalTotals();
+    }, 200);
+  }
+
+  function bindMobileModalEvents() {
+    const overlay = createMobileModal();
+    if (!overlay || overlay.dataset.bound === 'true') return;
+    overlay.dataset.bound = 'true';
+
+    const skuInput = overlay.querySelector('#msi-modal-sku');
+    const qtyInput = overlay.querySelector('#msi-modal-qty');
+    const priceInput = overlay.querySelector('#msi-modal-price');
+    const colorSelect = overlay.querySelector('#msi-modal-color');
+    const sizeSelect = overlay.querySelector('#msi-modal-size');
+    const saveBtn = overlay.querySelector('.msi-mobile-modal-save');
+
+    skuInput.addEventListener('input', (e) => {
+      showModalSkuSuggestions(e.target.value.trim());
+    });
+
+    skuInput.addEventListener('blur', () => {
+      setTimeout(removeModalSkuSuggestions, 150);
+      applySkuToActiveRow();
+    });
+
+    qtyInput.addEventListener('input', refreshModalTotals);
+    qtyInput.addEventListener('change', refreshModalTotals);
+
+    colorSelect.addEventListener('change', () => {
+      if (!activeMobileRow) return;
+      activeMobileRow.querySelector('.color-select').value = colorSelect.value;
+      applyColorDot(activeMobileRow.querySelector('.color-select'));
+      ensureImageUrl(activeMobileRow, activeMobileRow.querySelector('.sku').value.trim()).then(() => {});
+    });
+
+    sizeSelect.addEventListener('change', () => {
+      if (!activeMobileRow) return;
+      activeMobileRow.querySelector('.size-select').value = sizeSelect.value;
+    });
+
+    priceInput.addEventListener('change', refreshModalTotals);
+
+    saveBtn.addEventListener('click', () => {
+      if (!activeMobileRow) return;
+      syncRowFromModal(activeMobileRow);
+      ensureImageUrl(activeMobileRow, activeMobileRow.querySelector('.sku').value.trim()).then(() => {});
+      closeMobileModal();
+    });
   }
 
   /* =========================
      EVENTS
      ========================= */
   createRow();
+  renderMobileList();
+  bindMobileModalEvents();
 
   if (addRowBtn) {
     addRowBtn.addEventListener('click', (e) => {
       e.preventDefault();
       createRow();
+      if (isMobileView()) {
+        const rows = tableBody.querySelectorAll('.order-row');
+        const newRow = rows[rows.length - 1];
+        openMobileModal(newRow);
+      }
+    });
+  }
+
+  const mobileList = ensureMobileList();
+  if (mobileList) {
+    mobileList.addEventListener('click', (e) => {
+      const card = e.target.closest('.order-table-mobile-card');
+      if (!card) return;
+      const index = parseInt(card.dataset.rowIndex, 10);
+      const rows = tableBody.querySelectorAll('.order-row');
+      const row = rows[index];
+      if (!row) return;
+
+      if (e.target.classList.contains('remove-row')) {
+        row.remove();
+        updateGrandTotal();
+        renderMobileList();
+        return;
+      }
+
+      if (e.target.classList.contains('edit-row')) {
+        openMobileModal(row);
+      }
     });
   }
 
@@ -712,6 +1165,7 @@
     if (e.target.classList.contains('remove-row')) {
       e.target.closest('tr').remove();
       updateGrandTotal();
+      renderMobileList();
     }
   });
 
@@ -724,6 +1178,23 @@
   document.addEventListener('change', e => {
     if (e.target.classList.contains('color-select')) {
       applyColorDot(e.target);
+      const row = e.target.closest('.order-row');
+      const sku = row ? row.querySelector('.sku')?.value.trim() : '';
+      const colorValue = e.target.value.trim();
+      if (row && sku && colorValue) {
+        const cached = productDetailCache.get(sku);
+        const cachedColorUrl = getColorImageUrl(cached, colorValue);
+        if (cachedColorUrl) {
+          row.dataset.imageUrl = cachedColorUrl;
+          return;
+        }
+        fetchProductDetails(sku).then((data) => {
+          const fetchedColorUrl = getColorImageUrl(data, colorValue);
+          if (fetchedColorUrl) {
+            row.dataset.imageUrl = fetchedColorUrl;
+          }
+        }).catch(() => {});
+      }
     }
   });
 

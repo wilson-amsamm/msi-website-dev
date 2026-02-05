@@ -71,6 +71,18 @@ function msi_build_image_data($product) {
         $debug[] = 'No matching images found using SKU naming convention.';
     }
 
+    $featured_id = $product->get_image_id();
+    $featured_url = '';
+    if (!empty($colors)) {
+        $featured_url = reset($colors);
+    }
+    if (!$featured_url) {
+        $featured_url = $featured_id ? wp_get_attachment_url($featured_id) : '';
+    }
+    if (!$featured_url && !empty($size_images)) {
+        $featured_url = reset($size_images);
+    }
+
     $currency_symbol = function_exists('get_woocommerce_currency_symbol')
         ? get_woocommerce_currency_symbol()
         : '';
@@ -82,6 +94,11 @@ function msi_build_image_data($product) {
         'currency' => $currency_symbol,
         'colors' => $colors,
         'sizes' => $size_images,
+        'image_url' => $featured_url,
+        'image' => [
+            'id' => $featured_id ?: null,
+            'src' => $featured_url,
+        ],
         'debug' => [
             'enabled' => true,
             'messages' => $debug,

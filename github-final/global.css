@@ -23,3 +23,59 @@
     display: block;
   }
 }
+
+/* Home page slide-up panel */
+body.home .msi-home-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: min(320px, 92vw);
+  background: transparent;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+  overflow: hidden;
+  transform: translateY(130%);
+  opacity: 0;
+  transition: transform 320ms ease, opacity 320ms ease;
+  z-index: 10050;
+}
+
+body.home .msi-home-panel.is-open {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+body.home .msi-home-panel.is-closed {
+  transform: translateY(130%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.home .msi-home-panel__image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+body.home .msi-home-panel__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(17, 17, 17, 0.85);
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 840px) {
+  body.home .msi-home-panel {
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
