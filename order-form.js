@@ -92,6 +92,7 @@
   }
 
   let productCatalog = {};
+  const productDetailCache = new Map();
 
   fetch('/wp-json/orderform/v1/products')
     .then(res => res.json())
@@ -204,6 +205,8 @@
     const skuInput = row.querySelector('.sku');
     const nameInput = row.querySelector('.product-name');
     const priceInput = row.querySelector('.price-input');
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
 
     if (!productCatalog || Object.keys(productCatalog).length === 0) return;
 
@@ -219,6 +222,8 @@
 
       nameInput.value = '';
       priceInput.value = 'PHP 0';
+      if (colorSelect) resetSelect(colorSelect, 'Color');
+      if (sizeSelect) resetSelect(sizeSelect, 'Size');
       updateRowTotal(row);
 
       // visual cue only
@@ -232,6 +237,11 @@
     row.dataset.invalidSku = "false";
     skuInput.classList.remove('invalid');
     updateRowTotal(row);
+
+    // load color/size options from SKU endpoint
+    if (colorSelect || sizeSelect) {
+      loadProductOptions(row, sku);
+    }
   }
 
   /* =========================
@@ -246,6 +256,16 @@
     row.innerHTML = `
       <td><input type="text" name="items[${rowIndex}][sku]" class="sku" placeholder="SKU"></td>
       <td><input type="text" name="items[${rowIndex}][name]" class="product-name" readonly></td>
+      <td>
+        <select name="items[${rowIndex}][color]" class="color-select">
+          <option value="">Color</option>
+        </select>
+      </td>
+      <td>
+        <select name="items[${rowIndex}][size]" class="size-select">
+          <option value="">Size</option>
+        </select>
+      </td>
       <td><input type="text" name="items[${rowIndex}][price]" class="price-input" value="PHP 0" readonly></td>
       <td><input type="number" name="items[${rowIndex}][qty]" class="qty" min="1" value="1"></td>
       <td><input type="text" class="total-input" value="PHP 0.00" readonly></td>
@@ -314,6 +334,8 @@
     tableBody.querySelectorAll('.order-row').forEach(row => {
       const sku = row.querySelector('.sku').value.trim();
       const name = row.querySelector('.product-name').value.trim();
+      const color = row.querySelector('.color-select')?.value.trim() || '';
+      const size = row.querySelector('.size-select')?.value.trim() || '';
       const price = parseFloat(
         row.querySelector('.price-input').value.replace(/[^\d.]/g, '')
       ) || 0;
@@ -322,6 +344,8 @@
       items.push({
         sku,
         name,
+        color,
+        size,
         price,
         qty,
         amount: price * qty
@@ -368,6 +392,74 @@
     if (!result.success) {
       throw new Error(result.error || 'Apps Script error');
     }
+  }
+
+  function resetSelect(select, placeholder) {
+    select.innerHTML = '';
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = placeholder;
+    select.appendChild(opt);
+    select.disabled = true;
+  }
+
+  function fillSelect(select, items, placeholder) {
+    select.innerHTML = '';
+    const keys = Object.keys(items || {});
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = placeholder;
+    select.appendChild(placeholderOpt);
+
+    keys.forEach(key => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = String(key).toUpperCase();
+      select.appendChild(opt);
+    });
+
+    if (keys.length > 0) {
+      select.value = keys[0];
+      select.disabled = false;
+    } else {
+      select.disabled = true;
+    }
+  }
+
+  async function fetchProductDetails(sku) {
+    if (productDetailCache.has(sku)) {
+      return productDetailCache.get(sku);
+    }
+
+    try {
+      const res = await fetch(`/wp-json/orderform/v1/product/${encodeURIComponent(sku)}`);
+      if (!res.ok) {
+        productDetailCache.set(sku, null);
+        return null;
+      }
+      const data = await res.json();
+      productDetailCache.set(sku, data);
+      return data;
+    } catch (err) {
+      console.error('Failed to load SKU details', err);
+      productDetailCache.set(sku, null);
+      return null;
+    }
+  }
+
+  async function loadProductOptions(row, sku) {
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
+    if (!colorSelect && !sizeSelect) return;
+
+    if (colorSelect) resetSelect(colorSelect, 'Color');
+    if (sizeSelect) resetSelect(sizeSelect, 'Size');
+
+    const data = await fetchProductDetails(sku);
+    if (!data) return;
+
+    if (colorSelect) fillSelect(colorSelect, data.colors || {}, 'Color');
+    if (sizeSelect) fillSelect(sizeSelect, data.sizes || {}, 'Size');
   }
 
   /* =========================
@@ -472,3 +564,5 @@
 
   console.log('Order form JS initialized');
 });
+
+
