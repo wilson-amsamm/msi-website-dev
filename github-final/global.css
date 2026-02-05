@@ -1,0 +1,25 @@
+@media (max-width: 840px) {
+  header.wp-block-template-part {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 9999 !important;
+  }
+
+  header.wp-block-template-part
+  > div.wp-block-group.alignfull.is-layout-flow.wp-block-group-is-layout-flow {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 9999 !important;
+    background: #ffffff !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08) !important;
+  }
+}
+
+@media (max-width: 840px) {
+  body.home .wp-block-woocommerce-product-image img {
+    max-width: 70vw;
+    height: auto;
+    margin: 0 auto;
+    display: block;
+  }
+}

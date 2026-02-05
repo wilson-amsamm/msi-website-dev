@@ -67,7 +67,7 @@
   align-items: center;
   gap: 10px;
   margin: 10px 0 14px;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .msi-qty-label {
@@ -79,16 +79,17 @@
   padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .msi-total-label {
   margin-left: 6px;
   color: #555;
+  font-size: 18px;
 }
 
 .msi-total-amount {
-  font-weight: 700;
+  font-weight: 800;
 }
 
 /* Prevent placeholder flash before JS swaps images */
