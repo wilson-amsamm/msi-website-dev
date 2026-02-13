@@ -236,6 +236,7 @@
      SKU LOOKUP
      ========================= */
   function handleSkuLookup(row) {
+    if (!row) return;
     const skuInput = row.querySelector('.sku');
     const nameInput = row.querySelector('.product-name');
     const priceInput = row.querySelector('.price-input');
@@ -254,6 +255,7 @@
     if (!product) {
       row.dataset.invalidSku = "true";
       row.dataset.imageUrl = '';
+      clearRowVariantMeta(row);
 
       nameInput.value = '';
       priceInput.value = formatMoney(0);
@@ -271,6 +273,8 @@
     priceInput.value = formatMoney(product.price);
     row.dataset.invalidSku = "false";
     skuInput.classList.remove('invalid');
+    clearRowVariantMeta(row);
+    row.dataset.imageUrl = '';
     const selectedColor = colorSelect ? colorSelect.value.trim() : '';
     row.dataset.imageUrl = getRowImageUrl(row, sku, selectedColor);
     updateRowTotal(row);
@@ -368,6 +372,14 @@
       return false;
     }
 
+    const hasMissingStockNo = Array.from(rows).some(
+      (row) => row.dataset.stockNoMissing === 'true'
+    );
+    if (hasMissingStockNo) {
+      const proceed = confirm('Some items are missing Stock No. Continue submission?');
+      if (!proceed) return false;
+    }
+
     const grandTotal = parseFloat(
       document.getElementById('grand-total')?.textContent.replace(/[^\d.]/g, '')
     ) || 0;
@@ -426,6 +438,9 @@
         name,
         color,
         size,
+        variation_id: row.dataset.variationId ? Number(row.dataset.variationId) : null,
+        stock_no: row.dataset.stockNo || '',
+        stock_no_missing: row.dataset.stockNoMissing === 'true',
         image_url: imageUrl,
         price,
         qty,
@@ -541,6 +556,202 @@
     return `PHP ${formatted}`;
   }
 
+  function normalizeVariantKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/-/g, '');
+  }
+
+  function normalizeColorKey(value) {
+    const normalized = normalizeVariantKey(value);
+    if (normalized === 'grey') return 'gray';
+    return normalized;
+  }
+
+  function normalizeSizeKey(value) {
+    const normalized = normalizeVariantKey(value);
+    const map = {
+      extrasmall: 'xs',
+      xsmall: 'xs',
+      small: 's',
+      medium: 'm',
+      large: 'l',
+      extralarge: 'xl',
+      xlarge: 'xl',
+      '2xl': 'xxl',
+      '3xl': 'xxxl'
+    };
+    return map[normalized] || normalized;
+  }
+
+  function getVariantList(data) {
+    return Array.isArray(data && data.variants) ? data.variants : [];
+  }
+
+  function getVariantColorKeys(data) {
+    const set = new Set();
+    getVariantList(data).forEach((variant) => {
+      const color = normalizeColorKey(variant && variant.color);
+      if (color) set.add(color);
+    });
+    return Array.from(set);
+  }
+
+  function getVariantSizeKeys(data, color) {
+    const targetColor = normalizeColorKey(color);
+    const set = new Set();
+    getVariantList(data).forEach((variant) => {
+      const variantColor = normalizeColorKey(variant && variant.color);
+      const size = normalizeSizeKey(variant && variant.size);
+      if (!size) return;
+      if (!targetColor || !variantColor || variantColor === targetColor) {
+        set.add(size);
+      }
+    });
+    return Array.from(set);
+  }
+
+  function getImageSizeKeys(data) {
+    const sizes = data && data.sizes && typeof data.sizes === 'object' ? data.sizes : {};
+    const set = new Set();
+    Object.keys(sizes).forEach((key) => {
+      const normalized = normalizeVariantKey(key);
+      if (normalized) set.add(normalized);
+    });
+    return Array.from(set);
+  }
+
+  function findVariantBySelection(data, color, size) {
+    const targetColor = normalizeColorKey(color);
+    const targetSize = normalizeSizeKey(size);
+    const variants = getVariantList(data);
+    if (!variants.length) return null;
+
+    let match = null;
+
+    if (targetColor && targetSize) {
+      match = variants.find((variant) => {
+        const variantColor = normalizeColorKey(variant && variant.color);
+        const variantSize = normalizeSizeKey(variant && variant.size);
+        return variantColor === targetColor && variantSize === targetSize;
+      });
+    }
+
+    if (!match && targetSize) {
+      match = variants.find((variant) => normalizeSizeKey(variant && variant.size) === targetSize);
+    }
+
+    if (!match && targetColor) {
+      match = variants.find((variant) => normalizeColorKey(variant && variant.color) === targetColor);
+    }
+
+    return match || null;
+  }
+
+  function fillSelectWithKeys(select, keys, placeholder, preferredValue) {
+    if (!select) return;
+    select.innerHTML = '';
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = placeholder;
+    select.appendChild(placeholderOpt);
+
+    (keys || []).forEach((key) => {
+      const value = normalizeVariantKey(key);
+      if (!value) return;
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = String(value).toUpperCase();
+      select.appendChild(opt);
+    });
+
+    const preferred = normalizeVariantKey(preferredValue);
+    if (preferred && (keys || []).map(normalizeVariantKey).includes(preferred)) {
+      select.value = preferred;
+      select.disabled = false;
+    } else if ((keys || []).length > 0) {
+      select.value = normalizeVariantKey(keys[0]);
+      select.disabled = false;
+    } else {
+      select.disabled = true;
+    }
+
+    if (select.classList.contains('color-select')) {
+      applyColorDot(select);
+    }
+  }
+
+  function clearRowVariantMeta(row) {
+    if (!row || !row.dataset) return;
+    row.dataset.variationId = '';
+    row.dataset.stockNo = '';
+    row.dataset.stockNoMissing = 'false';
+  }
+
+  function applyVariantSelectionToRow(row, data) {
+    if (!row) return;
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
+    const priceInput = row.querySelector('.price-input');
+    if (!priceInput) return;
+
+    const hasVariants = getVariantList(data).length > 0;
+    const selectedColor = colorSelect ? colorSelect.value : '';
+    const selectedSize = sizeSelect ? sizeSelect.value : '';
+    const variant = findVariantBySelection(data, selectedColor, selectedSize);
+
+    if (variant) {
+      const variantPrice = Number(variant.price);
+      if (Number.isFinite(variantPrice)) {
+        priceInput.value = formatMoney(variantPrice);
+      } else if (Number.isFinite(Number(data && data.price))) {
+        priceInput.value = formatMoney(Number(data.price));
+      }
+
+      row.dataset.variationId = String(variant.variation_id || '');
+      row.dataset.stockNo = variant.stock_no ? String(variant.stock_no) : '';
+      row.dataset.stockNoMissing = variant.stock_no ? 'false' : 'true';
+      if (variant.image_url) {
+        row.dataset.imageUrl = variant.image_url;
+      }
+    } else {
+      row.dataset.variationId = '';
+      row.dataset.stockNo = '';
+      row.dataset.stockNoMissing = hasVariants ? 'true' : 'false';
+
+      if (Number.isFinite(Number(data && data.price))) {
+        priceInput.value = formatMoney(Number(data.price));
+      }
+    }
+
+    updateRowTotal(row);
+  }
+
+  function populateRowOptions(row, data) {
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
+    if (!colorSelect && !sizeSelect) return;
+
+    const currentColor = colorSelect ? colorSelect.value : '';
+    const currentSize = sizeSelect ? sizeSelect.value : '';
+
+    if (colorSelect) {
+      fillSelect(colorSelect, data.colors || {}, 'Color');
+      if (currentColor && [...colorSelect.options].some((opt) => normalizeVariantKey(opt.value) === normalizeVariantKey(currentColor))) {
+        colorSelect.value = currentColor;
+      }
+    }
+
+    if (sizeSelect) {
+      fillSelect(sizeSelect, data.sizes || {}, 'Size');
+      if (currentSize && [...sizeSelect.options].some((opt) => normalizeVariantKey(opt.value) === normalizeVariantKey(currentSize))) {
+        sizeSelect.value = currentSize;
+      }
+    }
+  }
+
   function createOrderSummaryModal() {
     let overlay = document.querySelector('.msi-order-summary-overlay');
     if (overlay) return overlay;
@@ -626,6 +837,14 @@
       <div class="msi-order-summary-total">
         <span>Total</span>
         <strong>${formatMoney(payload.total)}</strong>
+      </div>
+      <div class="msi-order-summary-payment">
+        <h4>Payment Details</h4>
+        <p>Hi! You may settle your payment via BDO or BPI:</p>
+        <p><strong>BDO Account Name:</strong> METRO SHIRT INC.<br><strong>Account Number:</strong> 00-2590033911</p>
+        <p class="msi-order-summary-payment-or">or</p>
+        <p><strong>BPI Account Name:</strong>  ANTONIO CO<br><strong>Account Number:</strong> 0391000603</p>
+        <p>Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!</p>
       </div>
     `;
 
@@ -731,6 +950,11 @@
     if (rowUrl) return rowUrl;
     if (sku && productCatalog && productCatalog[sku]) {
       const product = productCatalog[sku];
+      const selectedSize = row && row.querySelector
+        ? (row.querySelector('.size-select')?.value.trim() || '')
+        : '';
+      const variant = findVariantBySelection(product, selectedColor, selectedSize);
+      if (variant && variant.image_url) return variant.image_url;
       const colorUrl = getColorImageUrl(product, selectedColor);
       if (colorUrl) return colorUrl;
       const extracted = extractImageUrl(product);
@@ -744,11 +968,19 @@
     const selectedColor = row && row.querySelector
       ? (row.querySelector('.color-select')?.value.trim() || '')
       : '';
+    const selectedSize = row && row.querySelector
+      ? (row.querySelector('.size-select')?.value.trim() || '')
+      : '';
     const existing = getRowImageUrl(row, sku, selectedColor);
     if (existing) return existing;
 
     if (sku) {
       const cached = productDetailCache.get(sku);
+      const cachedVariant = findVariantBySelection(cached, selectedColor, selectedSize);
+      if (cachedVariant && cachedVariant.image_url) {
+        row.dataset.imageUrl = cachedVariant.image_url;
+        return cachedVariant.image_url;
+      }
       const cachedColorUrl = getColorImageUrl(cached, selectedColor);
       if (cachedColorUrl) {
         row.dataset.imageUrl = cachedColorUrl;
@@ -761,6 +993,11 @@
       }
 
       const data = await fetchProductDetails(sku);
+      const fetchedVariant = findVariantBySelection(data, selectedColor, selectedSize);
+      if (fetchedVariant && fetchedVariant.image_url) {
+        row.dataset.imageUrl = fetchedVariant.image_url;
+        return fetchedVariant.image_url;
+      }
       const fetchedColorUrl = getColorImageUrl(data, selectedColor);
       if (fetchedColorUrl) {
         row.dataset.imageUrl = fetchedColorUrl;
@@ -787,13 +1024,16 @@
     const data = await fetchProductDetails(sku);
     if (!data) return;
 
+    populateRowOptions(row, data);
+
     const selectedColor = colorSelect ? colorSelect.value.trim() : '';
+    const selectedSize = sizeSelect ? sizeSelect.value.trim() : '';
+    const variant = findVariantBySelection(data, selectedColor, selectedSize);
     const colorUrl = getColorImageUrl(data, selectedColor);
-    const imageUrl = colorUrl || extractImageUrl(data);
+    const imageUrl = (variant && variant.image_url) || colorUrl || extractImageUrl(data);
     if (imageUrl) row.dataset.imageUrl = imageUrl;
 
-    if (colorSelect) fillSelect(colorSelect, data.colors || {}, 'Color');
-    if (sizeSelect) fillSelect(sizeSelect, data.sizes || {}, 'Size');
+    applyVariantSelectionToRow(row, data);
   }
 
   function isMobileView() {
@@ -957,11 +1197,11 @@
 
     fetchProductDetails(sku).then((data) => {
       if (!data) return;
-      fillModalSelect(colorSelect, data.colors || {}, 'Color');
-      fillModalSelect(sizeSelect, data.sizes || {}, 'Size');
-
       const rowColor = row.querySelector('.color-select')?.value || '';
       const rowSize = row.querySelector('.size-select')?.value || '';
+
+      fillModalSelect(colorSelect, data.colors || {}, 'Color');
+      fillModalSelect(sizeSelect, data.sizes || {}, 'Size');
       if (rowColor) colorSelect.value = rowColor;
       if (rowSize) sizeSelect.value = rowSize;
     }).catch(() => {});
@@ -980,6 +1220,34 @@
       opt.textContent = String(key).toUpperCase();
       select.appendChild(opt);
     });
+  }
+
+  function fillModalSelectWithKeys(select, keys, placeholder, preferredValue) {
+    select.innerHTML = '';
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = placeholder;
+    select.appendChild(placeholderOpt);
+
+    (keys || []).forEach((key) => {
+      const normalized = normalizeVariantKey(key);
+      if (!normalized) return;
+      const opt = document.createElement('option');
+      opt.value = normalized;
+      opt.textContent = String(normalized).toUpperCase();
+      select.appendChild(opt);
+    });
+
+    const preferred = normalizeVariantKey(preferredValue);
+    if (preferred && (keys || []).map(normalizeVariantKey).includes(preferred)) {
+      select.value = preferred;
+      select.disabled = false;
+    } else if ((keys || []).length > 0) {
+      select.value = normalizeVariantKey(keys[0]);
+      select.disabled = false;
+    } else {
+      select.disabled = true;
+    }
   }
 
   function syncRowFromModal(row) {
@@ -1099,14 +1367,34 @@
 
     colorSelect.addEventListener('change', () => {
       if (!activeMobileRow) return;
-      activeMobileRow.querySelector('.color-select').value = colorSelect.value;
-      applyColorDot(activeMobileRow.querySelector('.color-select'));
-      ensureImageUrl(activeMobileRow, activeMobileRow.querySelector('.sku').value.trim()).then(() => {});
+      const rowColorSelect = activeMobileRow.querySelector('.color-select');
+      const rowSizeSelect = activeMobileRow.querySelector('.size-select');
+      const sku = activeMobileRow.querySelector('.sku').value.trim();
+      if (!rowColorSelect || !rowSizeSelect || !sku) return;
+
+      rowColorSelect.value = colorSelect.value;
+      applyColorDot(rowColorSelect);
+
+      fetchProductDetails(sku).then((data) => {
+        if (!data) return;
+        applyVariantSelectionToRow(activeMobileRow, data);
+        syncModalFromRow(activeMobileRow);
+        refreshModalTotals();
+      }).catch(() => {});
     });
 
     sizeSelect.addEventListener('change', () => {
       if (!activeMobileRow) return;
-      activeMobileRow.querySelector('.size-select').value = sizeSelect.value;
+      const rowSizeSelect = activeMobileRow.querySelector('.size-select');
+      const sku = activeMobileRow.querySelector('.sku').value.trim();
+      if (!rowSizeSelect || !sku) return;
+      rowSizeSelect.value = sizeSelect.value;
+      fetchProductDetails(sku).then((data) => {
+        if (!data) return;
+        applyVariantSelectionToRow(activeMobileRow, data);
+        syncModalFromRow(activeMobileRow);
+        refreshModalTotals();
+      }).catch(() => {});
     });
 
     priceInput.addEventListener('change', refreshModalTotals);
@@ -1176,31 +1464,46 @@
   });
 
   document.addEventListener('change', e => {
+    if (!e.target.classList.contains('color-select') && !e.target.classList.contains('size-select')) {
+      return;
+    }
+
+    const row = e.target.closest('.order-row');
+    if (!row) return;
+
     if (e.target.classList.contains('color-select')) {
       applyColorDot(e.target);
-      const row = e.target.closest('.order-row');
-      const sku = row ? row.querySelector('.sku')?.value.trim() : '';
-      const colorValue = e.target.value.trim();
-      if (row && sku && colorValue) {
-        const cached = productDetailCache.get(sku);
-        const cachedColorUrl = getColorImageUrl(cached, colorValue);
-        if (cachedColorUrl) {
-          row.dataset.imageUrl = cachedColorUrl;
-          return;
-        }
-        fetchProductDetails(sku).then((data) => {
-          const fetchedColorUrl = getColorImageUrl(data, colorValue);
-          if (fetchedColorUrl) {
-            row.dataset.imageUrl = fetchedColorUrl;
-          }
-        }).catch(() => {});
-      }
     }
+
+    const sku = row.querySelector('.sku')?.value.trim();
+    if (!sku) return;
+
+    fetchProductDetails(sku).then((data) => {
+      if (!data) return;
+
+      applyVariantSelectionToRow(row, data);
+
+      const colorValue = row.querySelector('.color-select')?.value.trim() || '';
+      const sizeValue = row.querySelector('.size-select')?.value.trim() || '';
+      const variant = findVariantBySelection(data, colorValue, sizeValue);
+      const colorUrl = getColorImageUrl(data, colorValue);
+      const imageUrl = (variant && variant.image_url) || colorUrl || extractImageUrl(data);
+      if (imageUrl) {
+        row.dataset.imageUrl = imageUrl;
+      }
+
+      if (isMobileView() && activeMobileRow === row) {
+        syncModalFromRow(row);
+        refreshModalTotals();
+      }
+    }).catch(() => {});
   });
 
   document.addEventListener('blur', e => {
     if (e.target.classList.contains('sku')) {
-      handleSkuLookup(e.target.closest('.order-row'));
+      const row = e.target.closest('.order-row');
+      if (!row) return;
+      handleSkuLookup(row);
     }
   }, true);
 
@@ -1280,5 +1583,3 @@
 
   console.log('Order form JS initialized');
 });
-
-

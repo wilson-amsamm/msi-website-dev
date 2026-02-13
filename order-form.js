@@ -403,6 +403,100 @@
     select.disabled = true;
   }
 
+  function formatMoney(value) {
+    const amount = Number(value || 0);
+    const formatted = amount.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return `PHP ${formatted}`;
+  }
+
+  function normalizeVariantKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/-/g, '');
+  }
+
+  function normalizeColorKey(value) {
+    const normalized = normalizeVariantKey(value);
+    if (normalized === 'grey') return 'gray';
+    return normalized;
+  }
+
+  function normalizeSizeKey(value) {
+    const normalized = normalizeVariantKey(value);
+    const map = {
+      extrasmall: 'xs',
+      xsmall: 'xs',
+      small: 's',
+      medium: 'm',
+      large: 'l',
+      extralarge: 'xl',
+      xlarge: 'xl',
+      '2xl': 'xxl',
+      '3xl': 'xxxl'
+    };
+    return map[normalized] || normalized;
+  }
+
+  function getVariantList(data) {
+    return Array.isArray(data && data.variants) ? data.variants : [];
+  }
+
+  function findVariantBySelection(data, color, size) {
+    const variants = getVariantList(data);
+    if (!variants.length) return null;
+
+    const targetColor = normalizeColorKey(color);
+    const targetSize = normalizeSizeKey(size);
+
+    let match = variants.find((variant) => {
+      const variantColor = normalizeColorKey(variant && variant.color);
+      const variantSize = normalizeSizeKey(variant && variant.size);
+      return variantColor === targetColor && variantSize === targetSize;
+    });
+
+    // Fallbacks for mixed naming between image keys and Woo attributes.
+    if (!match && targetSize) {
+      match = variants.find((variant) => normalizeSizeKey(variant && variant.size) === targetSize);
+    }
+    if (!match && targetColor) {
+      match = variants.find((variant) => normalizeColorKey(variant && variant.color) === targetColor);
+    }
+
+    return match || null;
+  }
+
+  function applyVariantSelectionToRow(row, data) {
+    if (!row) return;
+    const priceInput = row.querySelector('.price-input');
+    const colorSelect = row.querySelector('.color-select');
+    const sizeSelect = row.querySelector('.size-select');
+    if (!priceInput) return;
+
+    const selectedColor = colorSelect ? colorSelect.value : '';
+    const selectedSize = sizeSelect ? sizeSelect.value : '';
+    const variant = findVariantBySelection(data, selectedColor, selectedSize);
+
+    if (variant && Number.isFinite(Number(variant.price))) {
+      priceInput.value = formatMoney(Number(variant.price));
+      row.dataset.variationId = String(variant.variation_id || '');
+      row.dataset.stockNo = variant.stock_no ? String(variant.stock_no) : '';
+    } else {
+      const fallbackPrice = Number(data && data.price);
+      if (Number.isFinite(fallbackPrice)) {
+        priceInput.value = formatMoney(fallbackPrice);
+      }
+      row.dataset.variationId = '';
+      row.dataset.stockNo = '';
+    }
+
+    updateRowTotal(row);
+  }
+
   function fillSelect(select, items, placeholder) {
     select.innerHTML = '';
     const keys = Object.keys(items || {});
@@ -460,6 +554,7 @@
 
     if (colorSelect) fillSelect(colorSelect, data.colors || {}, 'Color');
     if (sizeSelect) fillSelect(sizeSelect, data.sizes || {}, 'Size');
+    applyVariantSelectionToRow(row, data);
   }
 
   /* =========================
@@ -480,6 +575,25 @@
     if (e.target.classList.contains('qty')) {
       updateRowTotal(e.target.closest('.order-row'));
     }
+  });
+
+  document.addEventListener('change', e => {
+    if (!e.target.classList.contains('color-select') && !e.target.classList.contains('size-select')) {
+      return;
+    }
+
+    const row = e.target.closest('.order-row');
+    if (!row) return;
+
+    const sku = row.querySelector('.sku')?.value.trim();
+    if (!sku) return;
+
+    fetchProductDetails(sku).then((data) => {
+      if (!data) return;
+      applyVariantSelectionToRow(row, data);
+    }).catch((err) => {
+      console.error('Failed to apply variant pricing', err);
+    });
   });
 
   document.addEventListener('blur', e => {
@@ -564,5 +678,4 @@
 
   console.log('Order form JS initialized');
 });
-
 

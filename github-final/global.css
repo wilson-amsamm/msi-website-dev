@@ -74,8 +74,19 @@ body.home .msi-home-panel__close {
 
 @media (max-width: 840px) {
   body.home .msi-home-panel {
-    right: 12px;
-    left: 12px;
-    width: auto;
+    right: 10px;
+    left: auto;
+    bottom: 10px;
+    width: min(230px, 64vw);
+    border-radius: 12px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+  }
+
+  body.home .msi-home-panel__close {
+    width: 28px;
+    height: 28px;
+    top: 6px;
+    right: 6px;
+    font-size: 16px;
   }
 }

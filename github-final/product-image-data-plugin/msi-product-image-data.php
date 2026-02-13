@@ -9,6 +9,234 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+function msi_normalize_attr_value($value) {
+    $value = is_string($value) ? $value : '';
+    $value = trim($value);
+    return strtolower($value);
+}
+
+function msi_normalize_variation_attr_scalar($value, $attr_key = '') {
+    if (is_array($value)) {
+        $value = reset($value);
+    }
+    if ($value === null || $value === false) {
+        return '';
+    }
+
+    $key = strtolower((string) $attr_key);
+
+    // If a term ID is stored, resolve it to the taxonomy term slug when possible.
+    if (is_numeric($value) && strpos($key, 'attribute_pa_') === 0) {
+        $taxonomy = str_replace('attribute_', '', $key);
+        $term = get_term_by('id', (int) $value, $taxonomy);
+        if ($term && !is_wp_error($term) && !empty($term->slug)) {
+            return msi_normalize_attr_value($term->slug);
+        }
+    }
+
+    return msi_normalize_attr_value((string) $value);
+}
+
+function msi_get_variation_meta_attr($variation_id, $keys) {
+    if (!$variation_id) {
+        return '';
+    }
+
+    foreach ($keys as $key) {
+        $normalized = strtolower((string) $key);
+        $meta_candidates = [
+            strpos($normalized, 'attribute_') === 0 ? $normalized : ('attribute_' . $normalized),
+            $normalized,
+        ];
+
+        foreach ($meta_candidates as $meta_key) {
+            $raw = get_post_meta($variation_id, $meta_key, true);
+            $normalized_value = msi_normalize_variation_attr_scalar($raw, $meta_key);
+            if ($normalized_value !== '') {
+                return $normalized_value;
+            }
+        }
+    }
+
+    return '';
+}
+
+function msi_get_variation_attr($variation, $keys) {
+    if (!$variation || !is_a($variation, 'WC_Product_Variation')) {
+        return '';
+    }
+
+    $variation_id = method_exists($variation, 'get_id') ? (int) $variation->get_id() : 0;
+
+    foreach ($keys as $key) {
+        $val = $variation->get_attribute($key);
+        if (is_string($val) && trim($val) !== '') {
+            return msi_normalize_attr_value($val);
+        }
+    }
+
+    $attributes = $variation->get_attributes();
+    if (!is_array($attributes)) {
+        return '';
+    }
+
+    foreach ($keys as $key) {
+        foreach ($attributes as $attrKey => $attrValue) {
+            $normalizedKey = strtolower((string) $attrKey);
+            if (
+                $normalizedKey === strtolower($key) ||
+                $normalizedKey === 'attribute_' . strtolower($key)
+            ) {
+                $normalized_value = msi_normalize_variation_attr_scalar($attrValue, $normalizedKey);
+                if ($normalized_value !== '') {
+                    return $normalized_value;
+                }
+            }
+        }
+    }
+
+    // Final fallback: read raw variation post meta.
+    $meta_value = msi_get_variation_meta_attr($variation_id, $keys);
+    if ($meta_value !== '') {
+        return $meta_value;
+    }
+
+    return '';
+}
+
+function msi_get_fallback_dimension_attr($variation, $exclude_keys) {
+    if (!$variation || !is_a($variation, 'WC_Product_Variation')) {
+        return '';
+    }
+
+    $attributes = $variation->get_attributes();
+    if (!is_array($attributes)) {
+        return '';
+    }
+
+    $normalized_excludes = [];
+    foreach ($exclude_keys as $exclude_key) {
+        $normalized_excludes[] = strtolower((string) $exclude_key);
+        $normalized_excludes[] = 'attribute_' . strtolower((string) $exclude_key);
+    }
+
+    foreach ($attributes as $attr_key => $attr_value) {
+        $normalized_key = strtolower((string) $attr_key);
+        if (in_array($normalized_key, $normalized_excludes, true)) {
+            continue;
+        }
+        $normalized_value = msi_normalize_variation_attr_scalar($attr_value, $normalized_key);
+        if ($normalized_value === '') {
+            continue;
+        }
+        return $normalized_value;
+    }
+
+    // Raw variation meta fallback: pick first non-color attribute_* value.
+    $variation_id = method_exists($variation, 'get_id') ? (int) $variation->get_id() : 0;
+    if ($variation_id) {
+        $all_meta = get_post_meta($variation_id);
+        if (is_array($all_meta)) {
+            foreach ($all_meta as $meta_key => $meta_values) {
+                $normalized_key = strtolower((string) $meta_key);
+                if (strpos($normalized_key, 'attribute_') !== 0) {
+                    continue;
+                }
+                if (in_array($normalized_key, $normalized_excludes, true)) {
+                    continue;
+                }
+
+                $raw_value = is_array($meta_values) ? reset($meta_values) : $meta_values;
+                $normalized_value = msi_normalize_variation_attr_scalar($raw_value, $normalized_key);
+                if ($normalized_value !== '') {
+                    return $normalized_value;
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function msi_build_variant_data($product, &$colors, &$size_images, $featured_url, &$debug) {
+    $variants = [];
+    if (!$product || !is_a($product, 'WC_Product') || !$product->is_type('variable')) {
+        return $variants;
+    }
+
+    $children = $product->get_children();
+    if (empty($children)) {
+        $debug[] = 'Variable product has no child variations.';
+        return $variants;
+    }
+
+    foreach ($children as $variation_id) {
+        $variation = wc_get_product($variation_id);
+        if (!$variation || !is_a($variation, 'WC_Product_Variation')) {
+            continue;
+        }
+
+        $color = msi_get_variation_attr($variation, ['pa_color', 'color']);
+        $size = msi_get_variation_attr($variation, ['pa_size', 'size']);
+        if ($size === '') {
+            // Handle products whose "size" label points to a differently-named attribute slug.
+            $size = msi_get_fallback_dimension_attr($variation, ['pa_color', 'color']);
+        }
+
+        $price_raw = $variation->get_price();
+        $price = is_numeric($price_raw) ? (float) $price_raw : null;
+
+        $stock_no = get_post_meta($variation_id, '_msi_stock_no', true);
+        $stock_no = is_string($stock_no) ? trim($stock_no) : '';
+        if ($stock_no === '') {
+            $alt_stock_no = get_post_meta($variation_id, '_stock_no', true);
+            $stock_no = is_string($alt_stock_no) ? trim($alt_stock_no) : '';
+        }
+        if ($stock_no === '') {
+            $variation_sku = $variation->get_sku();
+            $stock_no = is_string($variation_sku) ? trim($variation_sku) : '';
+        }
+
+        $image_id = $variation->get_image_id();
+        $image_url = $image_id ? wp_get_attachment_url($image_id) : '';
+        if (!$image_url && $color && isset($colors[$color])) {
+            $image_url = $colors[$color];
+        }
+        if (!$image_url && $featured_url) {
+            $image_url = $featured_url;
+        }
+
+        if ($color && $image_url && empty($colors[$color])) {
+            $colors[$color] = $image_url;
+        }
+        if ($size && $image_url && empty($size_images[$size])) {
+            $size_images[$size] = $image_url;
+        }
+
+        $variants[] = [
+            'variation_id' => (int) $variation_id,
+            'color' => $color,
+            'size' => $size,
+            'price' => $price,
+            'stock_no' => $stock_no,
+            'image_url' => $image_url ?: '',
+            'in_stock' => (bool) $variation->is_in_stock(),
+        ];
+    }
+
+    if (empty($variants)) {
+        $debug[] = 'No usable variant records found for variable product.';
+    }
+
+    usort($variants, function ($a, $b) {
+        $left = ($a['color'] ?? '') . '|' . ($a['size'] ?? '');
+        $right = ($b['color'] ?? '') . '|' . ($b['size'] ?? '');
+        return strcmp($left, $right);
+    });
+
+    return $variants;
+}
+
 function msi_build_image_data($product) {
     if (!$product || !is_a($product, 'WC_Product')) {
         return null;
@@ -83,6 +311,18 @@ function msi_build_image_data($product) {
         $featured_url = reset($size_images);
     }
 
+    $variants = msi_build_variant_data($product, $colors, $size_images, $featured_url, $debug);
+
+    $base_price = is_numeric($product->get_price()) ? (float) $product->get_price() : 0.0;
+    if ($base_price <= 0 && !empty($variants)) {
+        foreach ($variants as $variant) {
+            if (isset($variant['price']) && is_numeric($variant['price']) && (float) $variant['price'] > 0) {
+                $base_price = (float) $variant['price'];
+                break;
+            }
+        }
+    }
+
     $currency_symbol = function_exists('get_woocommerce_currency_symbol')
         ? get_woocommerce_currency_symbol()
         : '';
@@ -90,10 +330,11 @@ function msi_build_image_data($product) {
 
     return [
         'sku' => $sku ?: null,
-        'price' => (float) $product->get_price(),
+        'price' => $base_price,
         'currency' => $currency_symbol,
         'colors' => $colors,
         'sizes' => $size_images,
+        'variants' => $variants,
         'image_url' => $featured_url,
         'image' => [
             'id' => $featured_id ?: null,

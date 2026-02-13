@@ -1,4 +1,5 @@
 (function () {
+  let updateQtyAndTotal = null;
   // ---- helpers ----
   function findImage(containerSelector) {
     const container = document.querySelector(containerSelector);
@@ -71,6 +72,20 @@
   function getUnitPriceInfo() {
     const data =
       typeof window !== "undefined" ? window.MSI_PRODUCT_IMAGE_DATA : null;
+    const variants = data && Array.isArray(data.variants) ? data.variants : [];
+    if (variants.length && activeColorKey && activeSizeKey) {
+      const matched = variants.find((variant) => {
+        const color = String(variant && variant.color ? variant.color : "").toLowerCase();
+        const size = String(variant && variant.size ? variant.size : "").toLowerCase();
+        return color === String(activeColorKey).toLowerCase() && size === String(activeSizeKey).toLowerCase();
+      });
+      const variantPrice = matched ? Number(matched.price) : NaN;
+      if (Number.isFinite(variantPrice) && variantPrice > 0) {
+        const variantCurrency = data && data.currency ? String(data.currency) : "";
+        return { value: variantPrice, currency: variantCurrency };
+      }
+    }
+
     const dataPrice =
       data && Number.isFinite(Number(data.price)) ? Number(data.price) : 0;
     const dataCurrency = data && data.currency ? String(data.currency) : "";
@@ -120,6 +135,37 @@
     return { value: 0, currency };
   }
 
+  function setDisplayedUnitPrice(value, currency) {
+    const formatted = formatMoney(value, currency);
+    const selectors = [
+      ".summary .price",
+      ".price",
+      ".wc-block-components-product-price__value",
+      ".wc-block-components-product-price__regular",
+      ".wp-block-woocommerce-product-price",
+    ];
+
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        if (el.querySelector && el.querySelector(".woocommerce-Price-amount")) {
+          el.querySelectorAll(".woocommerce-Price-amount").forEach((amountEl) => {
+            amountEl.textContent = formatted;
+          });
+          return;
+        }
+        if (!el.children.length) {
+          el.textContent = formatted;
+        }
+      });
+    });
+
+    document.querySelectorAll("[itemprop='price']").forEach((el) => {
+      if (el.getAttribute && el.getAttribute("content") !== null) {
+        el.setAttribute("content", String(Number(value || 0)));
+      }
+    });
+  }
+
   function formatMoney(value, currency) {
     const formatted = Number(value || 0).toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -133,11 +179,19 @@
     const totalEl = document.querySelector(".msi-total-amount");
     if (!qtyInput || !totalEl) return;
 
+    if (typeof updateQtyAndTotal === "function") {
+      updateQtyAndTotal();
+      return;
+    }
+
     const update = () => {
       const qty = Math.max(0, parseInt(qtyInput.value, 10) || 0);
       const { value, currency } = getUnitPriceInfo();
+      setDisplayedUnitPrice(value, currency);
       totalEl.textContent = formatMoney(value * qty, currency);
     };
+
+    updateQtyAndTotal = update;
 
     qtyInput.addEventListener("input", update);
     qtyInput.addEventListener("change", update);
@@ -189,6 +243,7 @@
   // ---- image mappings (from inline JSON injected by plugin) ----
   let colorImages = {};
   let sizeImages = {};
+  let activeColorKey = null;
   let activeSizeKey = null;
 
   function loadData() {
@@ -208,6 +263,7 @@
   function applyColor(color) {
     loadData();
     const colorUrl = colorImages[color];
+    activeColorKey = color;
     if (!colorUrl) return;
 
     const colorImg = findImage(".product-image-color");
@@ -223,6 +279,11 @@
     }
 
     markReadyAfterSwap(colorImg, sizeImg);
+    const { value, currency } = getUnitPriceInfo();
+    setDisplayedUnitPrice(value, currency);
+    if (typeof updateQtyAndTotal === "function") {
+      updateQtyAndTotal();
+    }
   }
 
   function applySize(sizeKey) {
@@ -234,6 +295,11 @@
     const sizeImg = findImage(".product-image-size");
     if (sizeImg) swapImage(sizeImg, sizeUrl);
     markReadyAfterSwap(null, sizeImg);
+    const { value, currency } = getUnitPriceInfo();
+    setDisplayedUnitPrice(value, currency);
+    if (typeof updateQtyAndTotal === "function") {
+      updateQtyAndTotal();
+    }
   }
 
   // ---- default selection (runs once when DOM is usable) ----

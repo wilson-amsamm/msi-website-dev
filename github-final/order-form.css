@@ -381,6 +381,34 @@
   font-size: 15px;
 }
 
+.msi-order-summary-payment {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.msi-order-summary-payment h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.msi-order-summary-payment p {
+  margin: 0 0 8px;
+}
+
+.msi-order-summary-payment p:last-child {
+  margin-bottom: 0;
+}
+
+.msi-order-summary-payment-or {
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
 .msi-order-summary-actions {
   display: flex;
   justify-content: flex-end;

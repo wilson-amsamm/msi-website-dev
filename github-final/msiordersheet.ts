@@ -33,6 +33,9 @@ function doPost(e) {
         item.name,
         item.color,
         item.size,
+        item.variation_id || '',
+        item.stock_no || '',
+        item.stock_no_missing === true ? 'YES' : 'NO',
         item.price,
         item.qty,
         item.amount,
@@ -151,12 +154,23 @@ function sendOrderEmail(payload, orderNumber) {
 
   items.forEach((item) => {
     textLines.push(
-      `${item.sku || ''} | ${item.name || ''} | ${item.color || ''} | ${item.size || ''} | PHP ${Number(item.price || 0).toFixed(2)} x ${item.qty || 0} = PHP ${Number(item.amount || 0).toFixed(2)}`
+      `${item.sku || ''} | ${item.name || ''} | ${item.color || ''} | ${item.size || ''} | Stock No: ${item.stock_no || 'MISSING'} | PHP ${Number(item.price || 0).toFixed(2)} x ${item.qty || 0} = PHP ${Number(item.amount || 0).toFixed(2)}`
     );
   });
 
   textLines.push('');
   textLines.push(`Total: PHP ${Number(payload.total || 0).toFixed(2)}`);
+  textLines.push('');
+  textLines.push('Payment Details:');
+  textLines.push('Hi! You may settle your payment via BDO or BPI:');
+  textLines.push('');
+  textLines.push('BDO Account Name: METRO SHIRT INC.');
+  textLines.push('Account Number: 00-2590033911');
+  textLines.push('or');
+  textLines.push('BDO Account Name: ANTONIO CO');
+  textLines.push('Account Number: 0391000603');
+  textLines.push('');
+  textLines.push('Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!');
 
   const textBody = textLines.join('\n');
 
@@ -187,6 +201,7 @@ function sendOrderEmail(payload, orderNumber) {
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.name || ''}</td>
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.color || ''}</td>
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.size || ''}</td>
+        <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.stock_no || 'MISSING'}</td>
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">PHP ${Number(item.price || 0).toFixed(2)}</td>
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${item.qty || 0}</td>
         <td style="padding:10px;border-bottom:1px solid #e5e7eb;">PHP ${Number(item.amount || 0).toFixed(2)}</td>
@@ -213,6 +228,7 @@ function sendOrderEmail(payload, orderNumber) {
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Product</th>
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Color</th>
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Size</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Stock No</th>
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Price</th>
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Qty</th>
             <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;">Amount</th>
@@ -224,6 +240,14 @@ function sendOrderEmail(payload, orderNumber) {
       </table>
       <div style="margin-top:14px;font-size:14px;">
         <strong>Total:</strong> PHP ${Number(payload.total || 0).toFixed(2)}
+      </div>
+      <div style="margin-top:14px;padding:14px;border:1px solid #e5e7eb;border-radius:12px;background:#f9fafb;font-size:13px;line-height:1.5;">
+        <h3 style="margin:0 0 8px;font-size:14px;">Payment Details</h3>
+        <p style="margin:0 0 8px;">Hi! You may settle your payment via BDO or BPI:</p>
+        <p style="margin:0 0 8px;"><strong>Account Name:</strong> BDO METRO SHIRT INC.<br><strong>Account Number:</strong> 00-2590033911</p>
+        <p style="margin:0 0 8px;font-weight:600;text-transform:uppercase;">or</p>
+        <p style="margin:0 0 8px;"><strong>Account Name:</strong> BPI ANTONIO CO<br><strong>Account Number:</strong> 0391000603</p>
+        <p style="margin:0;">Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!</p>
       </div>
     </div>
   `;
