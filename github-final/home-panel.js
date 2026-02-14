@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const PANEL_ID = 'msi-home-panel';
   if (document.getElementById(PANEL_ID)) return;
 
-  const PANEL_IMAGE_URL = "https://www.metroshirtinc.com/wp-content/uploads/2026/02/metroshirt-slide-up-panel-placeholder.jpg";
+  const PANEL_IMAGE_URL = "https://www.metroshirtinc.com/wp-content/uploads/2026/02/metroshirt-slide-up-panel-final2.jpg";
   if (!PANEL_IMAGE_URL) {
     console.warn('[MSI Home Panel] Missing image URL. Set window.MSI_HOME_PANEL_IMAGE_URL.');
     return;

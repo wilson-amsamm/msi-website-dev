@@ -137,6 +137,7 @@
 
   function setDisplayedUnitPrice(value, currency) {
     const formatted = formatMoney(value, currency);
+    const singleAmountMarkup = `<span class="woocommerce-Price-amount amount">${formatted}</span>`;
     const selectors = [
       ".summary .price",
       ".price",
@@ -147,14 +148,32 @@
 
     selectors.forEach((selector) => {
       document.querySelectorAll(selector).forEach((el) => {
-        if (el.querySelector && el.querySelector(".woocommerce-Price-amount")) {
-          el.querySelectorAll(".woocommerce-Price-amount").forEach((amountEl) => {
-            amountEl.textContent = formatted;
-          });
+        if (!el) return;
+
+        const amountNodes = el.querySelectorAll
+          ? el.querySelectorAll(".woocommerce-Price-amount")
+          : [];
+
+        // Collapse price ranges ("low – high") to one value when a concrete
+        // variant/size is selected.
+        if (amountNodes.length > 1) {
+          el.innerHTML = singleAmountMarkup;
           return;
         }
+
+        if (amountNodes.length === 1) {
+          amountNodes[0].textContent = formatted;
+          return;
+        }
+
         if (!el.children.length) {
           el.textContent = formatted;
+          return;
+        }
+
+        // Fallback for wrappers with nested non-price elements.
+        if (selector === ".summary .price" || selector === ".price") {
+          el.innerHTML = singleAmountMarkup;
         }
       });
     });

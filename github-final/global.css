@@ -90,3 +90,53 @@ body.home .msi-home-panel__close {
     font-size: 16px;
   }
 }
+
+@media (max-width: 840px) {
+  /* About page (page-id-34): stack hero + media blocks cleanly on mobile */
+  body.page-id-34 {
+    overflow-x: hidden;
+  }
+
+  body.page-id-34 #wp-block-themeisle-blocks-advanced-columns-a2946a77 > .innerblocks-wrap {
+    display: block !important;
+  }
+
+  body.page-id-34 #wp-block-themeisle-blocks-advanced-column-92b2db05,
+  body.page-id-34 #wp-block-themeisle-blocks-advanced-column-bbddf55b {
+    flex-basis: 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  body.page-id-34 #wp-block-themeisle-blocks-slider-c01a9d70 {
+    --width: 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.page-id-34 #wp-block-themeisle-blocks-slider-c01a9d70 img {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  body.page-id-34 .entry-content .wp-container-core-group-is-layout-6c531013,
+  body.page-id-34 .entry-content .wp-container-core-columns-is-layout-28f84493 {
+    flex-wrap: wrap !important;
+  }
+
+  body.page-id-34 .entry-content .wp-container-content-8f9e1988,
+  body.page-id-34 .entry-content .wp-container-content-3b4e4270 {
+    flex-basis: 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.page-id-34 .entry-content img {
+    max-width: 100%;
+    height: auto;
+  }
+}
