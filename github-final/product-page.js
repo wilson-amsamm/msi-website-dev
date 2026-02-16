@@ -25,6 +25,47 @@
     return test.color !== "";
   }
 
+  function normalizeColorToken(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/_/g, "-")
+      .replace(/\s+/g, "-");
+  }
+
+  function resolveSwatchColor(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (isValidCssColor(raw)) return raw;
+
+    const normalized = normalizeColorToken(raw);
+
+    // Common custom color labels used in product naming.
+    const colorAliases = {
+      "ice-blue": "#89cff0",
+      "soft-yellow": "#f6e27a",
+      "off-white": "#f5f5f0",
+      "navy-blue": "#000080",
+      "royal-blue": "#4169e1",
+      "sky-blue": "#87ceeb",
+      "light-blue": "#add8e6",
+      "dark-gray": "#555555",
+      "light-gray": "#d3d3d3"
+    };
+
+    if (colorAliases[normalized]) return colorAliases[normalized];
+
+    // If color is composite like "ice-blue", prefer the last color-like token.
+    const tokens = normalized.split("-").filter(Boolean);
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      if (isValidCssColor(tokens[i])) return tokens[i];
+    }
+
+    const compact = normalized.replace(/-/g, "");
+    if (isValidCssColor(compact)) return compact;
+    return "";
+  }
+
   function buildSwatches(containerSelector, items, type) {
     const container = document.querySelector(containerSelector);
     if (!container) return;
@@ -47,8 +88,9 @@
         btn.className = "color-swatch";
         btn.dataset.color = key;
         btn.setAttribute("aria-label", key);
-        if (isValidCssColor(key)) {
-          btn.style.background = key;
+        const swatchColor = resolveSwatchColor(key);
+        if (swatchColor) {
+          btn.style.background = swatchColor;
         } else {
           btn.style.background = "#ddd";
         }
@@ -217,6 +259,109 @@
     update();
   }
 
+  function getCustomQtyInput() {
+    return document.querySelector(".msi-qty-input");
+  }
+
+  function getWooQtyInput() {
+    const form = wooVariationForm || document.querySelector("form.cart");
+    if (!form) return null;
+    return form.querySelector("input.qty");
+  }
+
+  function clampQty(rawQty, min, max) {
+    let qty = parseInt(rawQty, 10);
+    if (!Number.isFinite(qty)) qty = Number.isFinite(min) ? min : 1;
+    if (Number.isFinite(min)) qty = Math.max(min, qty);
+    if (Number.isFinite(max) && max > 0) qty = Math.min(max, qty);
+    return qty;
+  }
+
+  function syncWooQtyFromCustom() {
+    const customQty = getCustomQtyInput();
+    const wooQty = getWooQtyInput();
+    if (!customQty || !wooQty) return;
+
+    const min = Number(wooQty.getAttribute("min"));
+    const max = Number(wooQty.getAttribute("max"));
+    const normalized = clampQty(customQty.value, Number.isFinite(min) ? min : 1, Number.isFinite(max) ? max : NaN);
+
+    customQty.value = String(normalized);
+    if (wooQty.value !== String(normalized)) {
+      wooQty.value = String(normalized);
+      wooQty.dispatchEvent(new Event("input", { bubbles: true }));
+      wooQty.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function syncCustomQtyFromWoo() {
+    const customQty = getCustomQtyInput();
+    const wooQty = getWooQtyInput();
+    if (!customQty || !wooQty) return;
+
+    const min = Number(wooQty.getAttribute("min"));
+    const max = Number(wooQty.getAttribute("max"));
+    const normalized = clampQty(wooQty.value, Number.isFinite(min) ? min : 1, Number.isFinite(max) ? max : NaN);
+
+    if (wooQty.value !== String(normalized)) {
+      wooQty.value = String(normalized);
+    }
+    if (customQty.value !== String(normalized)) {
+      customQty.value = String(normalized);
+    }
+  }
+
+  function bindQtySync() {
+    const customQty = getCustomQtyInput();
+    const wooQty = getWooQtyInput();
+    if (!customQty || !wooQty) return;
+
+    const cartForm = wooQty.closest("form.cart") || document.querySelector("form.cart");
+    if (cartForm) {
+      cartForm.classList.add("msi-using-custom-price-qty");
+
+      if (cartForm.dataset.msiQtySubmitBound !== "true") {
+        cartForm.dataset.msiQtySubmitBound = "true";
+        cartForm.addEventListener("submit", () => {
+          syncWooQtyFromCustom();
+        });
+      }
+    }
+
+    const min = wooQty.getAttribute("min");
+    const max = wooQty.getAttribute("max");
+    const step = wooQty.getAttribute("step");
+    if (min) customQty.setAttribute("min", min);
+    if (max) customQty.setAttribute("max", max);
+    if (step) customQty.setAttribute("step", step);
+
+    if (customQty.dataset.msiQtyBound !== "true") {
+      customQty.dataset.msiQtyBound = "true";
+      customQty.addEventListener("input", () => {
+        syncWooQtyFromCustom();
+        if (typeof updateQtyAndTotal === "function") updateQtyAndTotal();
+      });
+      customQty.addEventListener("change", () => {
+        syncWooQtyFromCustom();
+        if (typeof updateQtyAndTotal === "function") updateQtyAndTotal();
+      });
+    }
+
+    if (wooQty.dataset.msiQtyBound !== "true") {
+      wooQty.dataset.msiQtyBound = "true";
+      wooQty.addEventListener("input", () => {
+        syncCustomQtyFromWoo();
+        if (typeof updateQtyAndTotal === "function") updateQtyAndTotal();
+      });
+      wooQty.addEventListener("change", () => {
+        syncCustomQtyFromWoo();
+        if (typeof updateQtyAndTotal === "function") updateQtyAndTotal();
+      });
+    }
+
+    syncWooQtyFromCustom();
+  }
+
   let imagesReady = false;
 
   function markImagesReady() {
@@ -264,6 +409,11 @@
   let sizeImages = {};
   let activeColorKey = null;
   let activeSizeKey = null;
+  let wooVariationForm = null;
+  let wooColorSelect = null;
+  let wooSizeSelect = null;
+  let syncingFromWoo = false;
+  let syncingToWoo = false;
 
   function loadData() {
     const data =
@@ -277,6 +427,130 @@
       if (Object.prototype.hasOwnProperty.call(obj, key)) return key;
     }
     return null;
+  }
+
+  function normalizeVariantToken(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s-]+/g, "");
+  }
+
+  function normalizeColorTokenForMatch(value) {
+    const normalized = normalizeVariantToken(value);
+    return normalized === "grey" ? "gray" : normalized;
+  }
+
+  function findMatchingDataKey(keys, rawValue, isColor) {
+    if (!rawValue) return "";
+    const normalize = isColor ? normalizeColorTokenForMatch : normalizeVariantToken;
+    const target = normalize(rawValue);
+    if (!target) return "";
+    const list = Array.isArray(keys) ? keys : [];
+    return list.find((key) => normalize(key) === target) || "";
+  }
+
+  function findMatchingOptionValue(select, rawValue, isColor) {
+    if (!select || !rawValue) return "";
+    const normalize = isColor ? normalizeColorTokenForMatch : normalizeVariantToken;
+    const target = normalize(rawValue);
+    if (!target) return "";
+    const options = Array.from(select.options || []).filter((opt) => opt.value);
+    const matched = options.find((opt) => normalize(opt.value) === target);
+    return matched ? matched.value : "";
+  }
+
+  function setWooSelectValue(select, rawValue, isColor) {
+    if (!select || !rawValue) return false;
+    const nextValue = findMatchingOptionValue(select, rawValue, isColor);
+    if (!nextValue) return false;
+    if (select.value === nextValue) return true;
+    select.value = nextValue;
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+
+  function markActiveColorSwatch(colorKey) {
+    document.querySelectorAll(".color-swatch").forEach((swatch) => {
+      swatch.classList.toggle("is-active", swatch.dataset.color === colorKey);
+    });
+  }
+
+  function markActiveSizeSwatch(sizeKey) {
+    document.querySelectorAll(".size-swatch").forEach((swatch) => {
+      swatch.classList.toggle("is-active", swatch.dataset.size === sizeKey);
+    });
+  }
+
+  function syncWooFromCustom() {
+    if (syncingFromWoo) return;
+    syncingToWoo = true;
+    try {
+      if (activeColorKey) setWooSelectValue(wooColorSelect, activeColorKey, true);
+      if (activeSizeKey) setWooSelectValue(wooSizeSelect, activeSizeKey, false);
+    } finally {
+      syncingToWoo = false;
+    }
+  }
+
+  function syncCustomFromWoo() {
+    if (syncingToWoo) return false;
+    syncingFromWoo = true;
+    let updated = false;
+    try {
+      loadData();
+
+      if (wooColorSelect && wooColorSelect.value) {
+        const matchedColorKey = findMatchingDataKey(Object.keys(colorImages), wooColorSelect.value, true);
+        if (matchedColorKey) {
+          markActiveColorSwatch(matchedColorKey);
+          applyColor(matchedColorKey);
+          updated = true;
+        }
+      }
+
+      if (wooSizeSelect && wooSizeSelect.value) {
+        const matchedSizeKey = findMatchingDataKey(Object.keys(sizeImages), wooSizeSelect.value, false);
+        if (matchedSizeKey) {
+          markActiveSizeSwatch(matchedSizeKey);
+          applySize(matchedSizeKey);
+          updated = true;
+        }
+      }
+    } finally {
+      syncingFromWoo = false;
+    }
+
+    return updated;
+  }
+
+  function bindWooVariationSync() {
+    wooVariationForm = document.querySelector("form.variations_form");
+    if (!wooVariationForm) return;
+
+    const variationSelects = Array.from(
+      wooVariationForm.querySelectorAll('select[name^="attribute_"]')
+    );
+    if (!variationSelects.length) return;
+
+    wooColorSelect = variationSelects.find((select) => /color/i.test(select.name)) || null;
+    wooSizeSelect = variationSelects.find((select) => /size/i.test(select.name)) || null;
+
+    if (!wooColorSelect && !wooSizeSelect) return;
+
+    const hasCustomSwatches = !!document.querySelector(".color-swatch, .size-swatch");
+    if (!hasCustomSwatches) return;
+
+    wooVariationForm.classList.add("msi-using-custom-swatches");
+
+    const onWooChange = () => {
+      syncCustomFromWoo();
+      bindQtySync();
+    };
+
+    if (wooColorSelect) wooColorSelect.addEventListener("change", onWooChange);
+    if (wooSizeSelect) wooSizeSelect.addEventListener("change", onWooChange);
   }
 
   function applyColor(color) {
@@ -303,6 +577,7 @@
     if (typeof updateQtyAndTotal === "function") {
       updateQtyAndTotal();
     }
+    syncWooFromCustom();
   }
 
   function applySize(sizeKey) {
@@ -319,6 +594,7 @@
     if (typeof updateQtyAndTotal === "function") {
       updateQtyAndTotal();
     }
+    syncWooFromCustom();
   }
 
   // ---- default selection (runs once when DOM is usable) ----
@@ -326,17 +602,21 @@
     loadData();
     buildSwatches(".color-swatches", colorImages, "color");
     buildSwatches(".size-swatches", sizeImages, "size");
+    bindWooVariationSync();
+
+    // If Woo variation selects already have a value, prefer those.
+    if (syncCustomFromWoo()) {
+      initQtyTotal();
+      bindQtySync();
+      return;
+    }
 
     let selectedColor = false;
     const firstSwatch = document.querySelector(".color-swatch");
     if (firstSwatch) {
       const color = firstSwatch.dataset.color;
       if (color) {
-        document
-          .querySelectorAll(".color-swatch")
-          .forEach((s) => s.classList.remove("is-active"));
-
-        firstSwatch.classList.add("is-active");
+        markActiveColorSwatch(color);
         applyColor(color);
         selectedColor = true;
       }
@@ -351,11 +631,12 @@
 
     const firstSize = document.querySelector(".size-swatch");
     if (firstSize && firstSize.dataset.size) {
-      firstSize.classList.add("is-active");
+      markActiveSizeSwatch(firstSize.dataset.size);
       applySize(firstSize.dataset.size);
     }
 
     initQtyTotal();
+    bindQtySync();
   }
 
   // ---- event delegation for swatches ----

@@ -59,7 +59,8 @@
       } catch (err) {
         // 7) Failure recovery
         console.error(err);
-        alert('Submission failed. Please try again.');
+        const reason = err && err.message ? String(err.message) : '';
+        alert(`Submission failed.${reason ? `\n\nReason: ${reason}` : '\n\nPlease try again.'}`);
         setSubmittingUI(false);
         isSubmitting = false;
       }
@@ -556,6 +557,72 @@
     return `PHP ${formatted}`;
   }
 
+  function isValidCssColor(value) {
+    if (!value) return false;
+    const test = new Option().style;
+    test.color = '';
+    test.color = value;
+    return test.color !== '';
+  }
+
+  function normalizeColorToken(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/_/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  }
+
+  function resolveColorSwatch(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (isValidCssColor(raw)) return raw;
+
+    const normalized = normalizeColorToken(raw);
+
+    const colorAliases = {
+      'ice-blue': '#89cff0',
+      'soft-yellow': '#f6e27a',
+      'off-white': '#f5f5f0',
+      'navy-blue': '#000080',
+      'royal-blue': '#4169e1',
+      'sky-blue': '#87ceeb',
+      'light-blue': '#add8e6',
+      'dark-gray': '#555555',
+      'light-gray': '#d3d3d3'
+    };
+
+    if (colorAliases[normalized]) return colorAliases[normalized];
+
+    const compact = normalized.replace(/-/g, '');
+    if (isValidCssColor(compact)) return compact;
+
+    const tokens = normalized.split('-').filter(Boolean);
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      if (isValidCssColor(tokens[i])) return tokens[i];
+    }
+
+    return '';
+  }
+
+  function formatColorLabel(value) {
+    return String(value || '')
+      .replace(/[-_]+/g, ' ')
+      .trim()
+      .toUpperCase();
+  }
+
+  function styleColorOption(optionEl, rawKey) {
+    if (!optionEl) return;
+    const swatchColor = resolveColorSwatch(rawKey);
+    optionEl.textContent = swatchColor
+      ? `● ${formatColorLabel(rawKey)}`
+      : formatColorLabel(rawKey);
+    optionEl.style.color = '';
+    optionEl.style.fontWeight = '';
+  }
+
   function normalizeVariantKey(value) {
     return String(value || '')
       .trim()
@@ -844,6 +911,7 @@
         <p><strong>BDO Account Name:</strong> METRO SHIRT INC.<br><strong>Account Number:</strong> 00-2590033911</p>
         <p class="msi-order-summary-payment-or">or</p>
         <p><strong>BPI Account Name:</strong>  ANTONIO CO<br><strong>Account Number:</strong> 0391000603</p>
+        <p><strong>Gcash</strong><br>RO*A J** P.<br>09759047246</p>
         <p>Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!</p>
       </div>
     `;
@@ -863,7 +931,11 @@
     keys.forEach(key => {
       const opt = document.createElement('option');
       opt.value = key;
-      opt.textContent = String(key).toUpperCase();
+      if (select.classList.contains('color-select')) {
+        styleColorOption(opt, key);
+      } else {
+        opt.textContent = String(key).toUpperCase();
+      }
       select.appendChild(opt);
     });
 
@@ -888,7 +960,8 @@
     const dot = document.createElement('span');
     dot.className = 'color-dot';
     dot.setAttribute('aria-hidden', 'true');
-    dot.style.setProperty('--dot-color', select.value || 'transparent');
+    const swatchColor = resolveColorSwatch(select.value);
+    dot.style.setProperty('--dot-color', swatchColor || '#ddd');
 
     select.insertAdjacentElement('beforebegin', dot);
   }
@@ -1217,7 +1290,11 @@
     Object.keys(items || {}).forEach((key) => {
       const opt = document.createElement('option');
       opt.value = key;
-      opt.textContent = String(key).toUpperCase();
+      if (select.id === 'msi-modal-color') {
+        styleColorOption(opt, key);
+      } else {
+        opt.textContent = String(key).toUpperCase();
+      }
       select.appendChild(opt);
     });
   }

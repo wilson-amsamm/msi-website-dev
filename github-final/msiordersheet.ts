@@ -18,8 +18,20 @@ function doPost(e) {
     
 
     const rows = [];
+    const variantCacheBySku = {};
 
     payload.items.forEach(item => {
+      const lookedUp = lookupVariantFromWoo(item, variantCacheBySku);
+      const resolvedVariationId = lookedUp.variation_id || item.variation_id || '';
+      const resolvedStockNo = lookedUp.stock_no || item.stock_no || '';
+      const stockNoMissing = !resolvedStockNo;
+
+      // Keep payload aligned with looked-up values so email and attachments
+      // use the same stock mapping as the sheet rows.
+      item.variation_id = resolvedVariationId;
+      item.stock_no = resolvedStockNo;
+      item.stock_no_missing = stockNoMissing;
+
       rows.push([
         payload.transaction_id,
         orderNumber,
@@ -33,9 +45,9 @@ function doPost(e) {
         item.name,
         item.color,
         item.size,
-        item.variation_id || '',
-        item.stock_no || '',
-        item.stock_no_missing === true ? 'YES' : 'NO',
+        resolvedVariationId,
+        resolvedStockNo,
+        stockNoMissing ? 'YES' : 'NO',
         item.price,
         item.qty,
         item.amount,
@@ -65,6 +77,105 @@ function doPost(e) {
       }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function getWooApiBaseUrl() {
+  const prop = PropertiesService.getScriptProperties().getProperty('MSI_WOO_BASE_URL');
+  const rawBase = prop ? String(prop).trim() : 'https://www.metroshirtinc.com';
+  return rawBase.replace(/\/+$/, '');
+}
+
+function normalizeLookupValue(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/-/g, '');
+}
+
+function normalizeLookupColor(value) {
+  const normalized = normalizeLookupValue(value);
+  return normalized === 'grey' ? 'gray' : normalized;
+}
+
+function normalizeLookupSize(value) {
+  const normalized = normalizeLookupValue(value);
+  const map = {
+    extrasmall: 'xs',
+    xsmall: 'xs',
+    small: 's',
+    medium: 'm',
+    large: 'l',
+    extralarge: 'xl',
+    xlarge: 'xl',
+    '2xl': 'xxl',
+    '3xl': 'xxxl'
+  };
+  return map[normalized] || normalized;
+}
+
+function fetchVariantsBySku(sku, cache) {
+  const normalizedSku = String(sku || '').trim().toUpperCase();
+  if (!normalizedSku) return [];
+
+  if (Object.prototype.hasOwnProperty.call(cache, normalizedSku)) {
+    return cache[normalizedSku];
+  }
+
+  const baseUrl = getWooApiBaseUrl();
+  const endpoint = `${baseUrl}/wp-json/orderform/v1/product/${encodeURIComponent(normalizedSku)}`;
+
+  try {
+    const res = UrlFetchApp.fetch(endpoint, { muteHttpExceptions: true });
+    const code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      cache[normalizedSku] = [];
+      return [];
+    }
+
+    const data = JSON.parse(res.getContentText() || '{}');
+    const variants = Array.isArray(data && data.variants) ? data.variants : [];
+    cache[normalizedSku] = variants;
+    return variants;
+  } catch (err) {
+    cache[normalizedSku] = [];
+    return [];
+  }
+}
+
+function findVariantBySelection(item, variants) {
+  if (!Array.isArray(variants) || !variants.length) return null;
+
+  const targetColor = normalizeLookupColor(item && item.color);
+  const targetSize = normalizeLookupSize(item && item.size);
+  if (!targetColor || !targetSize) return null;
+
+  for (let i = 0; i < variants.length; i++) {
+    const variant = variants[i];
+    const variantColor = normalizeLookupColor(variant && variant.color);
+    const variantSize = normalizeLookupSize(variant && variant.size);
+    if (variantColor === targetColor && variantSize === targetSize) {
+      return variant;
+    }
+  }
+
+  return null;
+}
+
+function lookupVariantFromWoo(item, cache) {
+  const variants = fetchVariantsBySku(item && item.sku, cache);
+  const variant = findVariantBySelection(item, variants);
+  if (!variant) {
+    return {
+      variation_id: '',
+      stock_no: ''
+    };
+  }
+
+  return {
+    variation_id: variant && variant.variation_id ? variant.variation_id : '',
+    stock_no: variant && variant.stock_no ? String(variant.stock_no).trim() : ''
+  };
 }
 
 function getNextOrderNumber() {
@@ -135,6 +246,7 @@ function sendOrderEmail(payload, orderNumber) {
   }
 
   const senderName = 'metroshirtinc';
+  const senderEmail = getSenderCopyEmail();
   const subject = orderNumber
     ? `Metro Shirt Order Confirmation - ${orderNumber}`
     : 'Metro Shirt Order Confirmation';
@@ -169,6 +281,10 @@ function sendOrderEmail(payload, orderNumber) {
   textLines.push('or');
   textLines.push('BDO Account Name: ANTONIO CO');
   textLines.push('Account Number: 0391000603');
+  textLines.push('');
+  textLines.push('Gcash');
+  textLines.push('RO*A J** P.');
+  textLines.push('09759047246');
   textLines.push('');
   textLines.push('Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!');
 
@@ -247,17 +363,62 @@ function sendOrderEmail(payload, orderNumber) {
         <p style="margin:0 0 8px;"><strong>Account Name:</strong> BDO METRO SHIRT INC.<br><strong>Account Number:</strong> 00-2590033911</p>
         <p style="margin:0 0 8px;font-weight:600;text-transform:uppercase;">or</p>
         <p style="margin:0 0 8px;"><strong>Account Name:</strong> BPI ANTONIO CO<br><strong>Account Number:</strong> 0391000603</p>
+        <p style="margin:0 0 8px;"><strong>Gcash</strong><br>RO*A J** P.<br>09759047246</p>
         <p style="margin:0;">Please send your proof of payment to our Viber at 0933 824 2859 so we can process your order. Thank you!</p>
       </div>
     </div>
   `;
 
+  const ccRecipients = [];
+  addCcRecipient(ccRecipients, 'wilson.amsamm@gmail.com');
+  addCcRecipient(ccRecipients, 'metro.shirt.inc@gmail.com');
+  addCcRecipient(ccRecipients, senderEmail);
+
   MailApp.sendEmail({
     to,
+    cc: ccRecipients.join(','),
     subject,
     htmlBody,
     body: textBody,
     name: senderName,
     attachments: attachments.length ? attachments : undefined
   });
+}
+
+function getSenderCopyEmail() {
+  // Preferred: explicit override for reliable behavior across account/domain setups.
+  const fromProperty = String(
+    PropertiesService.getScriptProperties().getProperty('SENDER_COPY_EMAIL') || ''
+  ).trim();
+  if (isValidEmailAddress(fromProperty)) return fromProperty;
+
+  // Fallbacks: these can be blank depending Workspace/privacy/deployment mode.
+  const effective = getSessionEmailSafe(() => Session.getEffectiveUser().getEmail());
+  if (isValidEmailAddress(effective)) return effective;
+
+  const active = getSessionEmailSafe(() => Session.getActiveUser().getEmail());
+  if (isValidEmailAddress(active)) return active;
+
+  return '';
+}
+
+function getSessionEmailSafe(getter) {
+  try {
+    return String(getter() || '').trim();
+  } catch (err) {
+    return '';
+  }
+}
+
+function isValidEmailAddress(email) {
+  const value = String(email || '').trim();
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function addCcRecipient(list, email) {
+  const value = String(email || '').trim();
+  if (!isValidEmailAddress(value)) return;
+  const exists = list.some((entry) => String(entry).toLowerCase() === value.toLowerCase());
+  if (!exists) list.push(value);
 }

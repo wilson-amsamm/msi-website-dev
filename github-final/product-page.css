@@ -107,3 +107,17 @@ html.msi-images-ready .product-image-size img {
   opacity: 1;
   transition: opacity 0.15s ease;
 }
+
+/* Keep Woo variation engine active for Add to Cart, but hide duplicate selectors */
+form.variations_form.msi-using-custom-swatches table.variations,
+form.variations_form.msi-using-custom-swatches .reset_variations {
+  display: none !important;
+}
+
+/* Keep Add to Cart button, but hide duplicate Woo price + qty UI */
+form.cart.msi-using-custom-price-qty .single_variation_wrap .woocommerce-variation-price,
+form.cart.msi-using-custom-price-qty .single_variation_wrap .price,
+form.cart.msi-using-custom-price-qty .woocommerce-variation-add-to-cart .quantity,
+form.cart.msi-using-custom-price-qty .quantity.buttons_added {
+  display: none !important;
+}
